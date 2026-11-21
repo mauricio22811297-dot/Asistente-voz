@@ -197,7 +197,7 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
   }
 
   // ---------------------------------------------------------------- cerebro
-  function crearCerebro({ fetchFn, getClave, getNombre, herramientas, ahora = () => new Date() }) {
+  function crearCerebro({ fetchFn, getClave, getNombre, herramientas, ahora = () => new Date(), alAvisar = () => {} }) {
     let memoria = { turnos: [], hasta: 0 };
     async function responder(texto) {
       try {
@@ -208,6 +208,7 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
         const declaraciones = herramientas.map(h => h.declaracion);
         let respuesta = '';
         for (let vuelta = 0; vuelta <= MAX_VUELTAS; vuelta++) {
+          alAvisar(vuelta === 0 ? 'pensando' : 'redactando');
           const j = await llamarGemini({ fetchFn, clave: getClave(), cuerpo: {
             systemInstruction: { parts: [{ text: instrucciones({ nombre: getNombre && getNombre(), ahora }) }] },
             contents, tools: [{ functionDeclarations: declaraciones }],
@@ -223,6 +224,7 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
           for (const p of llamadas) {
             const { name, args } = p.functionCall;
             const h = herramientas.find(x => x.nombre === name);
+            alAvisar('herramienta:' + name);
             let salida;
             try { salida = h ? await h.ejecutar(args && typeof args === 'object' ? args : {}) : { error: 'Esa herramienta no existe.' }; }
             catch (e) { salida = { error: 'No se pudo hacer eso.' }; }

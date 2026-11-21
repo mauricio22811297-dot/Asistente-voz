@@ -50,7 +50,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente</h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v3</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -85,7 +85,7 @@
   </form>
 </dialog>
 
-<script src="nucleo.js"></script>
+<script src="nucleo.js?v=3"></script>
 <script>
 (function(){
   'use strict';
@@ -195,11 +195,16 @@
     },
     conectores: window.CONECTORES || []   // acá se enchufa más adelante el sistema de la ferretería (ver nucleo.js)
   });
-  const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas });
+  const mic = $('mic'), estado = $('estado');
+  const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
+    alAvisar: paso => {
+      const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…' };
+      estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
+    } });
 
   // ------------------------------------------------ micrófono (se toca, se habla, se envía solo al terminar)
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const mic = $('mic'), estado = $('estado');
   let rec = null, ocupado = false;
   if (!Rec){ estado.textContent = 'Este navegador no tiene dictado por voz. Abrilo en Chrome.'; mic.disabled = true; }
 
@@ -212,7 +217,7 @@
       new Promise(ok => setTimeout(() => ok({ texto: 'Google no respondió a tiempo. Probá de nuevo en un momento.', error: 'tiempo' }), 70000))
     ]);
     clearTimeout(aviso);
-    mensaje('ia', r.texto); decir(r.texto); pintarListas();
+    mensaje('ia', r.texto + (r.error && r.error !== 'sinClave' ? '  [' + r.error + ']' : '')); decir(r.texto); pintarListas();
     if (r.error === 'sinClave') abrirAjustes();
     estado.textContent = 'Tocá el micrófono para hablar';
     ocupado = false; mic.disabled = false;
