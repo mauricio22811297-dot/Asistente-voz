@@ -29,6 +29,8 @@
   .panel h2{ margin:0 0 4px; font-size:14px; color:var(--suave); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
   .fila{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:4px 0; }
   .fila.sonando{ color:var(--rojo); font-weight:700; }
+  .modo{ background:none; border:1px solid var(--borde); border-radius:999px; padding:7px 16px; font-size:14px; }
+  .modo.activo{ border-color:var(--acento); color:var(--acento); }
   .chico{ background:none; border:1px solid var(--borde); border-radius:8px; padding:3px 10px; font-size:13px; }
   #conversacion{ flex:1; display:flex; flex-direction:column; gap:6px; }
   .msg{ padding:8px 12px; border-radius:12px; max-width:92%; white-space:pre-wrap; }
@@ -50,14 +52,15 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v3</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v4</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
 <main>
   <button id="mic" aria-label="Tocar para hablar">🎤</button>
   <div id="estado" role="status">Tocá el micrófono para hablar</div>
-  <div class="ejemplos">Probá: «qué hora es», «cómo está el clima», «poné un temporizador de 10 minutos», «anotá pan en la lista de compras», «contame un chiste».</div>
+  <button id="btn-modo" class="modo">👂 Manos libres</button>
+  <div class="ejemplos">Decí «Morsis» y después: «qué hora es», «cómo está el clima», «poné un temporizador de 10 minutos», «anotá pan en la lista de compras», «contame un chiste».</div>
 
   <div class="panel" id="panel-temporizadores" hidden></div>
   <div class="panel" id="panel-listas" hidden></div>
@@ -74,6 +77,8 @@
     <input type="text" id="a-nombre" autocomplete="off" placeholder="Para que te hable por tu nombre">
     <label class="campo" for="a-lugar">Ciudad para el clima</label>
     <input type="text" id="a-lugar" autocomplete="off" placeholder="Ej: Hurlingham">
+    <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
+    <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
     <div class="opcion"><input type="checkbox" id="a-voz" checked><label for="a-voz">Responder en voz alta</label></div>
     <div class="opcion"><input type="checkbox" id="a-pantalla"><label for="a-pantalla">Mantener la pantalla encendida</label></div>
     <p class="ayuda" id="a-msg"></p>
@@ -85,7 +90,7 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=3"></script>
+<script src="nucleo.js?v=4"></script>
 <script>
 (function(){
   'use strict';
@@ -99,7 +104,7 @@
     set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} }
   };
   const CLAVE_CONFIG = 'asistente.config';
-  const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false };
+  const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false, manosLibres: true, palabra: 'Morsis' };
   let config = Object.assign({}, porDefecto);
   try { Object.assign(config, JSON.parse(almacen.get(CLAVE_CONFIG) || '{}')); } catch (_) {}
   const guardarConfig = () => almacen.set(CLAVE_CONFIG, JSON.stringify(config));
@@ -113,7 +118,10 @@
 
   // ------------------------------------------------ voz de respuesta
   function decir(texto){
-    if (!config.voz || !('speechSynthesis' in window)) return;
+    if (!config.voz || !('speechSynthesis' in window)) return Promise.resolve();
+    return new Promise(listo => {
+    const fin = () => { clearTimeout(corte); listo(); };
+    const corte = setTimeout(listo, 4000 + String(texto || '').length * 120);
     try{
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(String(texto || '').replace(/[*_`#]/g, ''));
@@ -121,8 +129,10 @@
       const voces = speechSynthesis.getVoices();
       const v = voces.find(x => /^es[-_]AR/i.test(x.lang)) || voces.find(x => /^es/i.test(x.lang));
       if (v) u.voice = v;
+      u.onend = fin; u.onerror = fin;
       speechSynthesis.speak(u);
-    }catch(_){}
+    }catch(_){ fin(); }
+    });
   }
   function pitido(){
     try{
@@ -209,6 +219,7 @@
   if (!Rec){ estado.textContent = 'Este navegador no tiene dictado por voz. Abrilo en Chrome.'; mic.disabled = true; }
 
   async function enviar(dicho){
+    detenerFondo();
     ocupado = true; mic.disabled = true; estado.textContent = '🤖 Pensando…';
     mensaje('yo', dicho);
     const aviso = setTimeout(() => { estado.textContent = '🤖 Pensando… (está tardando, esperá un poco más)'; }, 8000);
@@ -217,14 +228,82 @@
       new Promise(ok => setTimeout(() => ok({ texto: 'Google no respondió a tiempo. Probá de nuevo en un momento.', error: 'tiempo' }), 70000))
     ]);
     clearTimeout(aviso);
-    mensaje('ia', r.texto + (r.error && r.error !== 'sinClave' ? '  [' + r.error + ']' : '')); decir(r.texto); pintarListas();
+    mensaje('ia', r.texto + (r.error && r.error !== 'sinClave' ? '  [' + r.error + ']' : '')); pintarListas();
     if (r.error === 'sinClave') abrirAjustes();
-    estado.textContent = 'Tocá el micrófono para hablar';
+    estado.textContent = '🔊 Respondiendo…';
+    await decir(r.texto);
     ocupado = false; mic.disabled = false;
+    textoEnReposo();
+    iniciarFondo();
   }
+  function textoEnReposo(){
+    estado.textContent = config.manosLibres ? `👂 Decí «${config.palabra}» y lo que necesites (o tocá el micrófono)` : 'Tocá el micrófono para hablar';
+  }
+
+  // ------------------------------------------------ MANOS LIBRES: escucha siempre y responde solo si oye la palabra
+  let fondo = null, esperandoOrden = 0, reintentos = 0;
+  function iniciarFondo(){
+    if (!Rec || !config.manosLibres || ocupado || rec || fondo || document.visibilityState !== 'visible') return;
+    const r = new Rec(); fondo = r;
+    r.lang = 'es-AR'; r.continuous = true; r.interimResults = false; r.maxAlternatives = 1;
+    r.onstart = () => { reintentos = 0; if (!esperandoOrden) textoEnReposo(); };
+    r.onresult = ev => {
+      for (let i = ev.resultIndex; i < ev.results.length; i++){
+        if (!ev.results[i].isFinal) continue;
+        const t = String(ev.results[i][0].transcript || '').trim();
+        if (!t || ocupado) continue;
+        if (esperandoOrden && Date.now() < esperandoOrden){ esperandoOrden = 0; enviar(t); return; }
+        esperandoOrden = 0;
+        const a = N.detectarActivacion(t, config.palabra);
+        if (!a.activado) continue;
+        if (a.orden){ enviar(a.orden); return; }
+        esperandoOrden = Date.now() + 8000;          // dijo solo "Morsis": espera la orden unos segundos
+        estado.textContent = '🎤 Te escucho…'; pitidoCorto();
+        setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 8200);
+      }
+    };
+    r.onerror = ev => {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed'){
+        config.manosLibres = false; guardarConfig(); pintarModo();
+        estado.textContent = 'No tengo permiso para el micrófono. Permitilo en el candado de la barra de direcciones y volvé a activar manos libres.';
+      }
+    };
+    r.onend = () => {
+      if (fondo !== r) return;
+      fondo = null;
+      reintentos++;
+      setTimeout(iniciarFondo, reintentos > 5 ? 3000 : 250);   // Chrome corta solo cada tanto: se vuelve a arrancar
+    };
+    try{ r.start(); }catch(_){ fondo = null; setTimeout(iniciarFondo, 1500); }
+  }
+  function detenerFondo(){
+    if (!fondo) return;
+    const r = fondo; fondo = null;
+    try{ r.abort(); }catch(_){}
+  }
+  function pitidoCorto(){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext; const ctx = new AC();
+      const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 1200; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(.15, ctx.currentTime); o.start(); o.stop(ctx.currentTime + .12);
+      setTimeout(() => ctx.close().catch(()=>{}), 500);
+    }catch(_){}
+  }
+  function pintarModo(){
+    const b = $('btn-modo');
+    b.textContent = config.manosLibres ? `👂 Manos libres: activado («${config.palabra}»)` : '👆 Manos libres: apagado';
+    b.classList.toggle('activo', !!config.manosLibres);
+    textoEnReposo();
+  }
+  $('btn-modo').addEventListener('click', () => {
+    config.manosLibres = !config.manosLibres; guardarConfig(); pintarModo();
+    if (config.manosLibres){ aplicarPantalla(); iniciarFondo(); } else { detenerFondo(); aplicarPantalla(); }
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') iniciarFondo(); else detenerFondo(); });
   function escuchar(){
     if (ocupado || !Rec) return;
     if (rec){ try{ rec.stop(); }catch(_){} return; }
+    detenerFondo();
     try{ speechSynthesis.cancel(); }catch(_){}
     const r = new Rec(); rec = r;
     r.lang = 'es-AR'; r.interimResults = true; r.maxAlternatives = 1;
@@ -245,7 +324,7 @@
       rec = null; mic.classList.remove('escuchando');
       const dicho = (final || parcial || '').trim();
       if (dicho) enviar(dicho);
-      else if (/Escuchando/.test(estado.textContent)) estado.textContent = 'No escuché nada. Tocá el micrófono y probá de nuevo.';
+      else { if (/Escuchando/.test(estado.textContent)) estado.textContent = 'No escuché nada. Tocá el micrófono y probá de nuevo.'; setTimeout(iniciarFondo, 1500); }
     };
     try{ r.start(); }catch(_){ rec = null; mic.classList.remove('escuchando'); }
   }
@@ -255,18 +334,20 @@
   let wakeLock = null;
   async function aplicarPantalla(){
     try{
-      if (config.pantalla){ if ('wakeLock' in navigator && !wakeLock){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } }
+      if (config.pantalla || config.manosLibres){ if ('wakeLock' in navigator && !wakeLock){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } }
       else if (wakeLock){ await wakeLock.release(); wakeLock = null; }
     }catch(_){}
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && config.pantalla && !wakeLock) aplicarPantalla(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && (config.pantalla || config.manosLibres) && !wakeLock) aplicarPantalla(); });
   aplicarPantalla();
+  pintarModo();
+  if (config.clave) iniciarFondo();
 
   // ------------------------------------------------ ajustes
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
@@ -285,8 +366,8 @@
       }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
     }
     config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
-    config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
-    guardarConfig(); aplicarPantalla(); dlg.close();
+    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
+    guardarConfig(); aplicarPantalla(); pintarModo(); dlg.close(); iniciarFondo();
     mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
   });
   if (!config.clave) setTimeout(abrirAjustes, 400);

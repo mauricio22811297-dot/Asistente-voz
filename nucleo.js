@@ -178,6 +178,34 @@ No tenés forma de hacer compras, pagos ni mandar mensajes: si te lo piden, dec�
 Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
   }
 
+
+  // ---------------------------------------------------------------- palabra de activación ("Morsis")
+  function distancia(a, b) {
+    const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i].concat(Array(n).fill(0)));
+    for (let j = 1; j <= n; j++) d[0][j] = j;
+    for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[m][n];
+  }
+  /**
+   * ¿Lo dicho empieza o contiene la palabra de activación? El dictado la escribe de muchas formas ("morsis", "morcis",
+   * "mor sis", "Morris"…), así que se acepta una diferencia de hasta 2 letras. Devuelve { activado, orden } donde
+   * orden es lo que se dijo DESPUÉS de la palabra (puede venir vacío: "Morsis" solo).
+   */
+  function detectarActivacion(texto, palabra = 'morsis') {
+    const clave = sinTildes(palabra).replace(/[^a-z0-9]/g, '');
+    const palabras = sinTildes(texto).replace(/[^a-z0-9ñ\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const tolerancia = clave.length >= 6 ? 2 : 1;
+    const parecida = w => w.length >= 3 && (w === clave || (w[0] === clave[0] && distancia(w, clave) <= tolerancia));
+    for (let i = 0; i < palabras.length; i++) {
+      let usadas = 0;
+      if (parecida(palabras[i])) usadas = 1;
+      else if (i + 1 < palabras.length && parecida(palabras[i] + palabras[i + 1])) usadas = 2;
+      if (usadas) return { activado: true, orden: palabras.slice(i + usadas).join(' ').trim() };
+    }
+    return { activado: false, orden: '' };
+  }
+
   // ---------------------------------------------------------------- Gemini
   /** Llama a Gemini. fetchFn y clave se pasan de afuera (así se prueba sin red). */
   async function llamarGemini({ fetchFn, clave, cuerpo }) {
@@ -243,5 +271,5 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     return { responder, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { crearListas, crearHerramientas, crearCerebro, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { crearListas, crearHerramientas, crearCerebro, detectarActivacion, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });

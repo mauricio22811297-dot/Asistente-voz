@@ -124,3 +124,16 @@ test('conectores: un objeto nuevo en la lista queda disponible para la IA sin to
   assert.match(r.texto, /1234/);
   assert.ok(g.pedidos[0].cuerpo.tools[0].functionDeclarations.some(f => f.name === 'precio'));
 });
+
+test('palabra de activación: acepta cómo la escribe el dictado y separa la orden', () => {
+  const d = t => N.detectarActivacion(t, 'Morsis');
+  assert.deepEqual(d('Morsis qué hora es'), { activado: true, orden: 'que hora es' });
+  assert.deepEqual(d('morcis, cómo está el clima'), { activado: true, orden: 'como esta el clima' });
+  assert.deepEqual(d('mor sis poné un temporizador'), { activado: true, orden: 'pone un temporizador' });
+  assert.equal(d('Morris contame un chiste').activado, true);
+  assert.deepEqual(d('Morsis'), { activado: true, orden: '' });
+  assert.equal(d('che dame un tornillo de tres cuartos').activado, false);
+  assert.equal(d('mostrame el precio').activado, false);
+  assert.equal(d('mis cosas').activado, false);
+  assert.equal(d('').activado, false);
+});
