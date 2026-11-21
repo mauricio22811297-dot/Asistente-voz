@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1720">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Asistente</title>
+<style>
+  :root{ --fondo:#0f1720; --panel:#17212c; --borde:#27384a; --texto:#e8eef4; --suave:#93a4b5; --acento:#3fa7ff; --rojo:#e5484d; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--fondo); color:var(--texto); font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  body{ display:flex; flex-direction:column; min-height:100dvh; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header{ display:flex; align-items:center; justify-content:space-between; padding:12px 16px; }
+  header h1{ margin:0; font-size:20px; }
+  button{ font:inherit; color:inherit; cursor:pointer; }
+  .icono{ background:none; border:1px solid var(--borde); border-radius:10px; padding:6px 12px; }
+  main{ flex:1; display:flex; flex-direction:column; align-items:center; gap:14px; padding:0 16px 16px; width:100%; max-width:640px; margin:0 auto; }
+  #mic{ width:150px; height:150px; border-radius:50%; border:0; font-size:62px; background:var(--acento); color:#04121f; box-shadow:0 8px 30px #3fa7ff44; transition:transform .1s; }
+  #mic:active{ transform:scale(.96); }
+  #mic.escuchando{ background:var(--rojo); color:#fff; animation:pulso 1s ease-in-out infinite; box-shadow:0 8px 30px #e5484d66; }
+  #mic:disabled{ opacity:.55; }
+  @keyframes pulso{ 50%{ transform:scale(1.07); } }
+  #estado{ min-height:24px; text-align:center; font-weight:600; }
+  .ejemplos{ color:var(--suave); font-size:13.5px; text-align:center; }
+  .panel{ width:100%; background:var(--panel); border:1px solid var(--borde); border-radius:14px; padding:10px 14px; }
+  .panel h2{ margin:0 0 4px; font-size:14px; color:var(--suave); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .fila{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:4px 0; }
+  .fila.sonando{ color:var(--rojo); font-weight:700; }
+  .chico{ background:none; border:1px solid var(--borde); border-radius:8px; padding:3px 10px; font-size:13px; }
+  #conversacion{ flex:1; display:flex; flex-direction:column; gap:6px; }
+  .msg{ padding:8px 12px; border-radius:12px; max-width:92%; white-space:pre-wrap; }
+  .msg.yo{ align-self:flex-end; background:#1d3a56; }
+  .msg.ia{ align-self:flex-start; background:var(--panel); border:1px solid var(--borde); }
+  .vacio{ color:var(--suave); text-align:center; }
+  dialog{ background:var(--panel); color:var(--texto); border:1px solid var(--borde); border-radius:16px; width:min(92vw,460px); padding:18px; }
+  dialog::backdrop{ background:#000a; }
+  dialog h2{ margin:0 0 8px; }
+  label.campo{ display:block; margin:12px 0 4px; font-weight:600; font-size:14px; }
+  input[type=text],input[type=password]{ width:100%; padding:10px; border-radius:10px; border:1px solid var(--borde); background:var(--fondo); color:var(--texto); font:inherit; }
+  .opcion{ display:flex; gap:8px; align-items:center; margin:10px 0; }
+  .ayuda{ color:var(--suave); font-size:13px; margin:4px 0 0; }
+  .botones{ display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+  .primario{ background:var(--acento); color:#04121f; border:0; border-radius:10px; padding:9px 16px; font-weight:700; }
+  .secundario{ background:none; border:1px solid var(--borde); border-radius:10px; padding:9px 16px; }
+  a{ color:var(--acento); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙️ Asistente</h1>
+  <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
+</header>
+
+<main>
+  <button id="mic" aria-label="Tocar para hablar">🎤</button>
+  <div id="estado" role="status">Tocá el micrófono para hablar</div>
+  <div class="ejemplos">Probá: «qué hora es», «cómo está el clima», «poné un temporizador de 10 minutos», «anotá pan en la lista de compras», «contame un chiste».</div>
+
+  <div class="panel" id="panel-temporizadores" hidden></div>
+  <div class="panel" id="panel-listas" hidden></div>
+  <div class="panel" id="conversacion"><div class="vacio" id="vacio">Todavía no hablaste con el asistente.</div></div>
+</main>
+
+<dialog id="dlg-ajustes">
+  <form method="dialog" id="form-ajustes">
+    <h2>Ajustes</h2>
+    <label class="campo" for="a-clave">Clave de Google (Gemini)</label>
+    <input type="password" id="a-clave" autocomplete="off" placeholder="Pegá acá tu clave">
+    <p class="ayuda">Es gratis. Se crea en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Queda guardada solo en este celular.</p>
+    <label class="campo" for="a-nombre">Tu nombre</label>
+    <input type="text" id="a-nombre" autocomplete="off" placeholder="Para que te hable por tu nombre">
+    <label class="campo" for="a-lugar">Ciudad para el clima</label>
+    <input type="text" id="a-lugar" autocomplete="off" placeholder="Ej: Hurlingham">
+    <div class="opcion"><input type="checkbox" id="a-voz" checked><label for="a-voz">Responder en voz alta</label></div>
+    <div class="opcion"><input type="checkbox" id="a-pantalla"><label for="a-pantalla">Mantener la pantalla encendida</label></div>
+    <p class="ayuda" id="a-msg"></p>
+    <div class="botones">
+      <button type="button" class="secundario" id="a-probar">Probar voz</button>
+      <button type="button" class="secundario" id="a-cancelar">Cerrar</button>
+      <button type="submit" class="primario" id="a-guardar" value="guardar">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="nucleo.js"></script>
+<script>
+(function(){
+  'use strict';
+  const N = window.NucleoAsistente;
+  const $ = id => document.getElementById(id);
+  const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+  // ------------------------------------------------ almacenamiento y ajustes (solo en este celular)
+  const almacen = {
+    get: k => { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} }
+  };
+  const CLAVE_CONFIG = 'asistente.config';
+  const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false };
+  let config = Object.assign({}, porDefecto);
+  try { Object.assign(config, JSON.parse(almacen.get(CLAVE_CONFIG) || '{}')); } catch (_) {}
+  const guardarConfig = () => almacen.set(CLAVE_CONFIG, JSON.stringify(config));
+
+  // ------------------------------------------------ conversación en pantalla
+  function mensaje(clase, texto){
+    const v = $('vacio'); if (v) v.remove();
+    const d = document.createElement('div'); d.className = 'msg ' + clase; d.textContent = texto;
+    $('conversacion').appendChild(d); d.scrollIntoView({ block: 'nearest' });
+  }
+
+  // ------------------------------------------------ voz de respuesta
+  function decir(texto){
+    if (!config.voz || !('speechSynthesis' in window)) return;
+    try{
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(texto || '').replace(/[*_`#]/g, ''));
+      u.lang = 'es-AR';
+      const voces = speechSynthesis.getVoices();
+      const v = voces.find(x => /^es[-_]AR/i.test(x.lang)) || voces.find(x => /^es/i.test(x.lang));
+      if (v) u.voice = v;
+      speechSynthesis.speak(u);
+    }catch(_){}
+  }
+  function pitido(){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext; const ctx = new AC();
+      [0, .35, .7, 1.05].forEach(t => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(.3, ctx.currentTime + t); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .22); });
+      setTimeout(() => ctx.close().catch(()=>{}), 2000);
+    }catch(_){}
+    try{ navigator.vibrate && navigator.vibrate([300, 150, 300, 150, 300]); }catch(_){}
+  }
+
+  // ------------------------------------------------ temporizadores (se guardan por si se recarga la página)
+  const CLAVE_TEMP = 'asistente.temporizadores';
+  let temporizadores = [], proximoId = 1, reloj = null;
+  const guardarTemporizadores = () => almacen.set(CLAVE_TEMP, JSON.stringify(temporizadores.map(t => ({ fin: t.fin, motivo: t.motivo, sonando: t.sonando }))));
+  const textoFalta = s => { const m = Math.floor(s / 60), r = s % 60; return m ? `${m} min ${String(r).padStart(2, '0')} s` : `${r} s`; };
+  function pintarTemporizadores(){
+    const p = $('panel-temporizadores');
+    if (!temporizadores.length){ p.hidden = true; clearInterval(reloj); reloj = null; return; }
+    p.hidden = false;
+    p.innerHTML = '<h2>Temporizadores</h2>' + temporizadores.map(t => {
+      const falta = Math.max(0, Math.ceil((t.fin - Date.now()) / 1000));
+      return `<div class="fila${t.sonando ? ' sonando' : ''}"><span>${esc(t.motivo || 'Temporizador')} · ${t.sonando ? '¡terminó!' : textoFalta(falta)}</span><button class="chico" data-quitar="${t.id}">${t.sonando ? 'Silenciar' : 'Cancelar'}</button></div>`;
+    }).join('');
+    if (!reloj) reloj = setInterval(pintarTemporizadores, 1000);
+  }
+  function arrancar(t){
+    const restante = Math.max(0, t.fin - Date.now());
+    if (t.sonando) return;
+    t.timeout = setTimeout(() => {
+      t.sonando = true; guardarTemporizadores(); pintarTemporizadores(); pitido();
+      const aviso = 'Terminó el temporizador' + (t.motivo ? ' de ' + t.motivo : '') + '.';
+      mensaje('ia', '⏰ ' + aviso); decir(aviso);
+    }, restante);
+  }
+  function nuevoTemporizador(seg, motivo){
+    const t = { id: proximoId++, fin: Date.now() + seg * 1000, motivo: motivo || '', sonando: false };
+    temporizadores.push(t); guardarTemporizadores(); arrancar(t); pintarTemporizadores();
+  }
+  $('panel-temporizadores').addEventListener('click', e => {
+    const b = e.target.closest('[data-quitar]'); if (!b) return;
+    const i = temporizadores.findIndex(t => String(t.id) === b.dataset.quitar);
+    if (i >= 0){ clearTimeout(temporizadores[i].timeout); temporizadores.splice(i, 1); guardarTemporizadores(); pintarTemporizadores(); }
+  });
+  try{
+    (JSON.parse(almacen.get(CLAVE_TEMP) || '[]') || []).forEach(g => { if (g.sonando) return; const t = { id: proximoId++, fin: g.fin, motivo: g.motivo, sonando: false }; temporizadores.push(t); arrancar(t); });
+    pintarTemporizadores();
+  }catch(_){}
+
+  // ------------------------------------------------ listas
+  const listas = N.crearListas(almacen);
+  function pintarListas(){
+    const todas = listas.todas(), nombres = Object.keys(todas);
+    const p = $('panel-listas');
+    if (!nombres.length){ p.hidden = true; return; }
+    p.hidden = false;
+    p.innerHTML = '<h2>Listas</h2>' + nombres.map(n => `<div style="margin:6px 0 2px; font-weight:700;">${esc(n)}</div>`
+      + todas[n].map((t, i) => `<div class="fila"><span>${i + 1}. ${esc(t)}</span></div>`).join('')).join('');
+  }
+  pintarListas();
+
+  // ------------------------------------------------ cerebro
+  const herramientas = N.crearHerramientas({
+    ahora: () => new Date(),
+    pedirJSON: async url => { const r = await fetch(url); if (!r.ok) throw new Error('http ' + r.status); return r.json(); },
+    listas, config: { get lat(){ return config.lat; }, get lon(){ return config.lon; }, get lugar(){ return config.lugar; } },
+    temporizadores: {
+      poner: nuevoTemporizador,
+      cancelarTodos: () => { const n = temporizadores.length; temporizadores.forEach(t => clearTimeout(t.timeout)); temporizadores = []; guardarTemporizadores(); pintarTemporizadores(); return n; }
+    },
+    conectores: window.CONECTORES || []   // acá se enchufa más adelante el sistema de la ferretería (ver nucleo.js)
+  });
+  const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, o), getClave: () => config.clave, getNombre: () => config.nombre, herramientas });
+
+  // ------------------------------------------------ micrófono (se toca, se habla, se envía solo al terminar)
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = $('mic'), estado = $('estado');
+  let rec = null, ocupado = false;
+  if (!Rec){ estado.textContent = 'Este navegador no tiene dictado por voz. Abrilo en Chrome.'; mic.disabled = true; }
+
+  async function enviar(dicho){
+    ocupado = true; mic.disabled = true; estado.textContent = '🤖 Pensando…';
+    mensaje('yo', dicho);
+    const r = await cerebro.responder(dicho);
+    mensaje('ia', r.texto); decir(r.texto); pintarListas();
+    if (r.error === 'sinClave') abrirAjustes();
+    estado.textContent = 'Tocá el micrófono para hablar';
+    ocupado = false; mic.disabled = false;
+  }
+  function escuchar(){
+    if (ocupado || !Rec) return;
+    if (rec){ try{ rec.stop(); }catch(_){} return; }
+    try{ speechSynthesis.cancel(); }catch(_){}
+    const r = new Rec(); rec = r;
+    r.lang = 'es-AR'; r.interimResults = true; r.maxAlternatives = 1;
+    let final = '', parcial = '';
+    r.onstart = () => { mic.classList.add('escuchando'); estado.textContent = '🎤 Escuchando…'; };
+    r.onresult = ev => {
+      let t = ''; for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+      parcial = t; estado.textContent = '🎤 ' + t;
+      if (ev.results[ev.results.length - 1].isFinal) final = t;
+    };
+    r.onerror = ev => {
+      const m = { 'not-allowed': 'No tengo permiso para usar el micrófono. Tocá el candado de la barra de direcciones y permitilo.',
+        'service-not-allowed': 'No tengo permiso para usar el micrófono.', 'no-speech': 'No escuché nada. Tocá el micrófono y hablá cerca.',
+        'audio-capture': 'No se encontró un micrófono.', 'network': 'El dictado necesita internet y no hubo conexión.' };
+      if (ev.error !== 'aborted') estado.textContent = m[ev.error] || ('No se pudo usar el micrófono (' + ev.error + ').');
+    };
+    r.onend = () => {
+      rec = null; mic.classList.remove('escuchando');
+      const dicho = (final || parcial || '').trim();
+      if (dicho) enviar(dicho);
+      else if (/Escuchando/.test(estado.textContent)) estado.textContent = 'No escuché nada. Tocá el micrófono y probá de nuevo.';
+    };
+    try{ r.start(); }catch(_){ rec = null; mic.classList.remove('escuchando'); }
+  }
+  mic.addEventListener('click', escuchar);
+
+  // ------------------------------------------------ pantalla encendida
+  let wakeLock = null;
+  async function aplicarPantalla(){
+    try{
+      if (config.pantalla){ if ('wakeLock' in navigator && !wakeLock){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } }
+      else if (wakeLock){ await wakeLock.release(); wakeLock = null; }
+    }catch(_){}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && config.pantalla && !wakeLock) aplicarPantalla(); });
+  aplicarPantalla();
+
+  // ------------------------------------------------ ajustes
+  const dlg = $('dlg-ajustes');
+  function abrirAjustes(){
+    $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
+    $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    if (!dlg.open) dlg.showModal();
+  }
+  $('btn-ajustes').addEventListener('click', abrirAjustes);
+  $('a-cancelar').addEventListener('click', () => dlg.close());
+  $('a-probar').addEventListener('click', () => { const v = config.voz; config.voz = true; decir('Hola, soy tu asistente. Si me escuchás, la voz funciona.'); config.voz = v; });
+  $('form-ajustes').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = $('a-msg'); msg.textContent = '';
+    const lugar = $('a-lugar').value.trim();
+    if (lugar && lugar !== config.lugar){
+      try{
+        const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(lugar)}&count=1&language=es`).then(x => x.json());
+        const c = r.results && r.results[0];
+        if (!c){ msg.textContent = 'No encontré esa ciudad. Probá con otra o dejá la anterior.'; return; }
+        config.lugar = c.name; config.lat = c.latitude; config.lon = c.longitude;
+      }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
+    }
+    config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
+    config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
+    guardarConfig(); aplicarPantalla(); dlg.close();
+    mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
+  });
+  if (!config.clave) setTimeout(abrirAjustes, 400);
+
+  // ------------------------------------------------ app instalable
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
