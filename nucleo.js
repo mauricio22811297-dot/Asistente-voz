@@ -297,6 +297,16 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     return null;
   }
 
+  /**
+   * ¿La frase quedó cortada? El dictado corta con cualquier pausa: "decime el precio de…". Si termina en una palabra
+   * que no puede cerrar una frase (de, del, el, la, y, para, "precio", "cuánto sale"…), conviene seguir escuchando.
+   */
+  function quedaIncompleta(texto) {
+    const t = sinTildes(texto).replace(/[.,;:!?¿¡]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t) return false;
+    return /\b(de|del|el|la|los|las|un|una|unos|unas|y|o|a|al|para|por|con|sin|que|en|mas|decime|dame|busca|buscame|precio|precios|cuanto (sale|esta|cuesta|vale|debe)|cuanto|cual|tenes|hay)$/.test(t);
+  }
+
   // ---------------------------------------------------------------- palabra de activación ("Morsis")
   function distancia(a, b) {
     const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i].concat(Array(n).fill(0)));
@@ -398,5 +408,5 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     return { responder, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });

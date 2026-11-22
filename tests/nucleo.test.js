@@ -195,3 +195,12 @@ test('palabra de activación: formas comunes del dictado ("Moisés", "Norsis")',
 test('palabra de activación: el detector offline escribe «Mercedes»', () => {
   assert.equal(N.detectarActivacion('mercedes', 'Morsis').activado, true);
 });
+
+test('frase cortada por una pausa: se detecta para seguir escuchando', () => {
+  assert.equal(N.quedaIncompleta('decime el precio de'), true);
+  assert.equal(N.quedaIncompleta('cuánto sale el'), true);
+  assert.equal(N.quedaIncompleta('cuánto sale'), true);
+  assert.equal(N.quedaIncompleta('precio del sellador hidro 3 chico'), false);
+  assert.equal(N.quedaIncompleta('qué hora es'), false);
+  assert.equal(N.quedaIncompleta(''), false);
+});

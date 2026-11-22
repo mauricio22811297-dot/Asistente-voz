@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v14</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v15</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -98,8 +98,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=14"></script>
-<script src="detector.js?v=14"></script>
+<script src="nucleo.js?v=15"></script>
+<script src="detector.js?v=15"></script>
 <script>
 (function(){
   'use strict';
@@ -282,7 +282,7 @@
     esperandoOrden = 0;
     const a = N.detectarActivacion(t, config.palabra);
     if (!a.activado) return false;
-    if (a.orden){ enviar(a.orden); return true; }
+    if (a.orden){ if (N.quedaIncompleta(a.orden)) { detenerFondo(); escuchar(a.orden, 1); } else enviar(a.orden); return true; }
     esperandoOrden = Date.now() + 8000;          // dijo solo "Morsis": espera la orden unos segundos
     estado.textContent = '🎤 Te escucho…'; pitidoCorto();
     setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 8200);
@@ -378,7 +378,9 @@
     if (config.manosLibres){ aplicarPantalla(); iniciarFondo(); } else { detenerFondo(); aplicarPantalla(); }
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') iniciarFondo(); else detenerFondo(); });
-  function escuchar(){
+  // previo: lo que ya se dijo antes de una pausa ("decime el precio de…"); se sigue escuchando hasta 2 veces.
+  function escuchar(previo, extensiones){
+    previo = typeof previo === 'string' ? previo : ''; extensiones = extensiones || 0;
     if (ocupado || !Rec) return;
     if (rec){ try{ rec.stop(); }catch(_){} return; }
     detenerFondo();
@@ -386,10 +388,10 @@
     const r = new Rec(); rec = r;
     r.lang = 'es-AR'; r.interimResults = true; r.maxAlternatives = 1;
     let final = '', parcial = '';
-    r.onstart = () => { mic.classList.add('escuchando'); estado.textContent = '🎤 Escuchando…'; };
+    r.onstart = () => { mic.classList.add('escuchando'); estado.textContent = previo ? '🎤 ' + previo + '… (seguí)' : '🎤 Escuchando…'; };
     r.onresult = ev => {
       let t = ''; for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
-      parcial = t; estado.textContent = '🎤 ' + t;
+      parcial = t; estado.textContent = '🎤 ' + (previo ? previo + ' ' : '') + t;
       if (ev.results[ev.results.length - 1].isFinal) final = t;
     };
     r.onerror = ev => {
@@ -400,7 +402,8 @@
     };
     r.onend = () => {
       rec = null; mic.classList.remove('escuchando');
-      const dicho = (final || parcial || '').trim();
+      const dicho = ((previo ? previo + ' ' : '') + (final || parcial || '')).trim();
+      if (dicho && extensiones < 2 && N.quedaIncompleta(dicho)){ setTimeout(() => escuchar(dicho, extensiones + 1), 50); return; }
       const cierre = seguimiento && /^(nada|no nada|gracias|listo|chau|ok|okey|esta bien|está bien|cancel\w*|basta)[.!]*$/i.test(dicho);
       seguimiento = false;
       if (dicho && !cierre) enviar(dicho);
@@ -409,7 +412,7 @@
     };
     try{ r.start(); }catch(_){ rec = null; mic.classList.remove('escuchando'); }
   }
-  mic.addEventListener('click', escuchar);
+  mic.addEventListener('click', () => escuchar());
 
   // ------------------------------------------------ pantalla encendida
   let wakeLock = null;
