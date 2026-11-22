@@ -84,7 +84,7 @@
           const consulta = String((args && args.consulta) || '').trim().slice(0, 200);
           if (!consulta) return { error: 'Falta qué buscar.' };
           try { return { resultado: await contexto.buscarWeb(consulta) }; }
-          catch (e) { return { error: e && e.tipo === 'limite' ? 'Llegué al límite de búsquedas por hoy.' : 'No pude buscar en internet ahora.' }; }
+          catch (e) { return { error: e && e.tipo === 'limite' ? 'Google no me deja buscar en internet con la clave gratis. Para eso hay que activar la facturación en Google AI Studio.' : 'No pude buscar en internet ahora.' }; }
         }
       }] : []),
       {
@@ -458,7 +458,7 @@ Si es sobre tránsito, decí si hay cortes, accidentes, obras o demoras AHORA y 
         if (web && ES_DE_AHORA.test(sinTildes(texto))) {
           alAvisar('herramienta:buscar_en_internet');
           const r = await web.ejecutar({ consulta: texto });
-          if (r.resultado) return { texto: r.resultado };
+          return { texto: r.resultado || r.error, error: r.error ? 'busqueda' : undefined };
         }
         const turnos = memoria.hasta > Date.now() ? memoria.turnos.slice() : [];
         const contents = turnos.map(t => ({ role: t.rol, parts: [{ text: t.texto }] }));
