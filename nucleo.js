@@ -243,7 +243,7 @@
   /** ¿Es una pregunta del negocio? Entonces va directo al sistema (sin pasar por la IA de acá: más rápido). */
   function esDelNegocio(texto) {
     const t = sinTildes(texto);
-    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket)\b/.test(t);
+    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket|mercado ?libre|mercadolibre|en ml)\b/.test(t);
   }
 
   /**
