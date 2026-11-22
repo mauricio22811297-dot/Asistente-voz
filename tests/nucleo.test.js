@@ -290,3 +290,39 @@ test('"a cuánto está el dólar" va al dólar y no a la ferretería', async () 
   const c = N.crearCerebro({ fetchFn: async () => { throw new Error('no'); }, getClave: () => 'K', herramientas: h });
   for (const p of ['A cuánto está el dólar?', 'precio del dólar blue']) assert.match((await c.responder(p)).texto, /^Dólar Oficial: compra 1400/);
 });
+
+test('cuentas, descuentos y cuotas, recordatorio a una hora y feriados', async () => {
+  const puestos = [];
+  const pedirJSON = async url => url.includes('argentinadatos') ? [{ fecha: '2026-11-23', tipo: 'trasladable', nombre: 'Día de la Soberanía Nacional' }, { fecha: '2026-12-08', tipo: 'inamovible', nombre: 'Inmaculada Concepción' }, { fecha: '2026-01-01', tipo: 'inamovible', nombre: 'Año nuevo' }] : null;
+  const h = N.crearHerramientas({ ahora: () => new Date('2026-11-22T19:30:00Z'), pedirJSON, listas: N.crearListas(almacenEnMemoria()),
+    temporizadores: { poner: (seg, motivo, op) => puestos.push({ seg, motivo, op }), cancelarTodos: () => 0 }, config: { cuotas: { 3: 10, 6: 20 } } });
+  const ej = (n, a) => h.find(x => x.nombre === n).ejecutar(a);
+  assert.equal((await ej('calcular', { expresion: '3/4 x 25,4' })).resultado, 19.05);
+  assert.equal((await ej('calcular', { expresion: '15/4' })).redondeado_para_arriba, 4);
+  assert.ok((await ej('calcular', { expresion: 'alert(1)' })).error);
+  assert.deepEqual(await ej('precio_final', { monto: 10000, descuento_porcentaje: 10 }), { precio_lista: 10000, descuento_porcentaje: 10, con_descuento: 9000 });
+  const c = await ej('precio_final', { monto: 9000, cuotas: 3 });
+  assert.equal(c.total_en_cuotas, 9900); assert.equal(c.valor_de_cada_cuota, 3300);
+  assert.match((await ej('precio_final', { monto: 9000, cuotas: 12 })).error, /12 cuotas/);
+  // 19:30 UTC = 16:30 en Argentina → a las 17:00 faltan 30 minutos
+  const r = await ej('poner_recordatorio', { hora: '17:00', texto: 'llamar a Gas Sur' });
+  assert.equal(r.hora, '17:00'); assert.equal(puestos[0].seg, 1800); assert.equal(puestos[0].op.recordatorio, true);
+  await ej('poner_recordatorio', { hora: '9:00', texto: 'abrir' });
+  assert.equal(puestos[1].seg, (24 * 3600) - (7.5 * 3600));
+  const f = await ej('feriados', {});
+  assert.equal(f.proximos[0].fecha, '2026-11-23'); assert.match(f.proximos[0].dia, /lunes/);
+  assert.ok(!f.proximos.some(x => x.fecha === '2026-01-01'));
+});
+
+test('con "descuento" o "cuotas" no va directo a la ferretería: pasa por la IA para poder hacer la cuenta', async () => {
+  const preguntas = [];
+  const conector = { nombre: 'consultar_ferreteria', declaracion: { name: 'consultar_ferreteria' }, ejecutar: async a => { preguntas.push(a.pregunta); return { respuesta: 'ok' }; } };
+  const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas(almacenEnMemoria()), temporizadores: { poner() {}, cancelarTodos: () => 0 }, conectores: [conector] });
+  let llamoGemini = false;
+  const c = N.crearCerebro({ fetchFn: async () => { llamoGemini = true; return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'Con 10% queda 9.000 pesos.' }] } }] }) }; }, getClave: () => 'K', herramientas: h });
+  await c.responder('cuánto sale el codo con 10% de descuento');
+  assert.equal(llamoGemini, true); assert.deepEqual(preguntas, []);
+  llamoGemini = false;
+  await c.responder('cuánto sale el codo de 1/2');
+  assert.equal(llamoGemini, false); assert.equal(preguntas.length, 1);
+});

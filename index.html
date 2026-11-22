@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v26</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v27</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -85,6 +85,9 @@
     <p class="ayuda">En el sistema: Caja y reportes → Asistente → Morsis → Generar código.</p>
     <label class="campo" for="a-compu">Compu donde sumar al ticket</label>
     <input type="text" id="a-compu" autocomplete="off" placeholder="Ej: Compu 1 (el mismo nombre que le pusiste en el sistema)">
+    <label class="campo" for="a-cuotas">Recargos por cuotas</label>
+    <input type="text" id="a-cuotas" autocomplete="off" placeholder="Ej: 3:10, 6:20, 12:45 (cuotas:recargo %)">
+    <p class="ayuda">Para «¿cuánto queda en 3 cuotas?». Si no cobrás recargo en alguna, poné 0 (ej: 3:0).</p>
     <label class="campo" for="a-tomtom">Clave de TomTom (tránsito en vivo, gratis)</label>
     <input type="password" id="a-tomtom" autocomplete="off" placeholder="Se saca gratis en developer.tomtom.com">
     <p class="ayuda">Para preguntar «¿cómo está la Panamericana?» o «¿cuánto tardo a Pilar?».</p>
@@ -107,8 +110,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=26"></script>
-<script src="detector.js?v=26"></script>
+<script src="nucleo.js?v=27"></script>
+<script src="detector.js?v=27"></script>
 <script>
 (function(){
   'use strict';
@@ -165,7 +168,7 @@
   // ------------------------------------------------ temporizadores (se guardan por si se recarga la página)
   const CLAVE_TEMP = 'asistente.temporizadores';
   let temporizadores = [], proximoId = 1, reloj = null;
-  const guardarTemporizadores = () => almacen.set(CLAVE_TEMP, JSON.stringify(temporizadores.map(t => ({ fin: t.fin, motivo: t.motivo, sonando: t.sonando }))));
+  const guardarTemporizadores = () => almacen.set(CLAVE_TEMP, JSON.stringify(temporizadores.map(t => ({ fin: t.fin, motivo: t.motivo, sonando: t.sonando, recordatorio: t.recordatorio }))));
   const textoFalta = s => { const m = Math.floor(s / 60), r = s % 60; return m ? `${m} min ${String(r).padStart(2, '0')} s` : `${r} s`; };
   function pintarTemporizadores(){
     const p = $('panel-temporizadores');
@@ -182,12 +185,14 @@
     if (t.sonando) return;
     t.timeout = setTimeout(() => {
       t.sonando = true; guardarTemporizadores(); pintarTemporizadores(); pitido();
-      const aviso = 'Terminó el temporizador' + (t.motivo ? ' de ' + t.motivo : '') + '.';
-      mensaje('ia', '⏰ ' + aviso); decir(aviso);
+      const aviso = t.recordatorio ? 'Recordatorio: ' + (t.motivo || 'tenías algo para hacer') + '.' : 'Terminó el temporizador' + (t.motivo ? ' de ' + t.motivo : '') + '.';
+      mensaje('ia', '⏰ ' + aviso);
+      // Un recordatorio se dice en voz alta aunque la voz de las respuestas esté apagada.
+      if (t.recordatorio && !config.voz){ config.voz = true; decir(aviso).finally(() => { config.voz = false; }); } else decir(aviso);
     }, restante);
   }
-  function nuevoTemporizador(seg, motivo){
-    const t = { id: proximoId++, fin: Date.now() + seg * 1000, motivo: motivo || '', sonando: false };
+  function nuevoTemporizador(seg, motivo, opciones){
+    const t = { id: proximoId++, fin: Date.now() + seg * 1000, motivo: motivo || '', sonando: false, recordatorio: !!(opciones && opciones.recordatorio) };
     temporizadores.push(t); guardarTemporizadores(); arrancar(t); pintarTemporizadores();
   }
   $('panel-temporizadores').addEventListener('click', e => {
@@ -196,7 +201,7 @@
     if (i >= 0){ clearTimeout(temporizadores[i].timeout); temporizadores.splice(i, 1); guardarTemporizadores(); pintarTemporizadores(); }
   });
   try{
-    (JSON.parse(almacen.get(CLAVE_TEMP) || '[]') || []).forEach(g => { if (g.sonando) return; const t = { id: proximoId++, fin: g.fin, motivo: g.motivo, sonando: false }; temporizadores.push(t); arrancar(t); });
+    (JSON.parse(almacen.get(CLAVE_TEMP) || '[]') || []).forEach(g => { if (g.sonando) return; const t = { id: proximoId++, fin: g.fin, motivo: g.motivo, sonando: false, recordatorio: !!g.recordatorio }; temporizadores.push(t); arrancar(t); });
     pintarTemporizadores();
   }catch(_){}
 
@@ -213,12 +218,18 @@
   pintarListas();
 
   // ------------------------------------------------ cerebro
+  // "3:10, 6:20" → { 3: 10, 6: 20 } (cuotas: recargo en %)
+  function leerCuotas(t){
+    const r = {};
+    String(t || '').split(/[,;\n]+/).forEach(par => { const m = par.match(/(\d+)\s*(?:cuotas?)?\s*[:=-]?\s*(\d+(?:[.,]\d+)?)\s*%?/i); if (m && Number(m[1]) > 1) r[Number(m[1])] = Number(m[2].replace(',', '.')); });
+    return r;
+  }
   const herramientas = N.crearHerramientas({
     ahora: () => new Date(),
     pedirJSON: async url => { const r = await fetch(url, { signal: AbortSignal.timeout(10000) }); if (!r.ok) throw new Error('http ' + r.status); return r.json(); },
     tomtom: () => config.tomtom,
     posicion: () => new Promise(ok => { if (!navigator.geolocation) return ok(null); navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lon: p.coords.longitude }), () => ok(null), { timeout: 5000, maximumAge: 300000 }); }),
-    listas, config: { get lat(){ return config.lat; }, get lon(){ return config.lon; }, get lugar(){ return config.lugar; } },
+    listas, config: { get lat(){ return config.lat; }, get lon(){ return config.lon; }, get lugar(){ return config.lugar; }, get cuotas(){ return leerCuotas(config.cuotas); } },
     temporizadores: {
       poner: nuevoTemporizador,
       cancelarTodos: () => { const n = temporizadores.length; temporizadores.forEach(t => clearTimeout(t.timeout)); temporizadores = []; guardarTemporizadores(); pintarTemporizadores(); return n; }
@@ -235,7 +246,7 @@
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
     alAvisar: paso => {
       const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
-        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…' };
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…' };
       estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
     } });
 
@@ -507,7 +518,7 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-cuotas').value = config.cuotas || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
@@ -529,7 +540,7 @@
       }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
     }
     config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
-    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.tomtom = $('a-tomtom').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
+    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.tomtom = $('a-tomtom').value.trim(); config.cuotas = $('a-cuotas').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
     guardarConfig(); aplicarPantalla(); pintarModo(); dlg.close(); iniciarFondo();
     mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
   });

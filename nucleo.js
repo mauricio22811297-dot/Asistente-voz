@@ -114,6 +114,84 @@
         }
       },
       {
+        nombre: 'calcular',
+        declaracion: {
+          name: 'calcular', description: 'Hace una cuenta exacta. Usala SIEMPRE para cuentas (no calcules de memoria): medidas (1 pulgada = 25,4 mm: "3/4*25.4"), cuántos caños o tramos hacen falta, metros, superficies, porcentajes, vueltos.',
+          parameters: { type: 'object', properties: { expresion: { type: 'string', description: 'Cuenta con números, + - * / ( ) y punto decimal. Ej: "15/4", "3/4*25.4", "(2.5*3)+1".' } }, required: ['expresion'] }
+        },
+        ejecutar: async args => {
+          const e = String((args && args.expresion) || '').replace(/,/g, '.').replace(/[x×]/gi, '*').replace(/÷/g, '/').replace(/\s+/g, '');
+          if (!e || e.length > 120 || !/^[0-9.+\-*/()]+$/.test(e)) return { error: 'Esa cuenta no la entiendo.' };
+          let v; try { v = Function('"use strict"; return (' + e + ')')(); } catch (_) { return { error: 'Esa cuenta no la entiendo.' }; }
+          if (typeof v !== 'number' || !Number.isFinite(v)) return { error: 'La cuenta no da un número.' };
+          return { expresion: e, resultado: Math.round(v * 1000) / 1000, redondeado_para_arriba: Math.ceil(v - 1e-9) };
+        }
+      },
+      {
+        nombre: 'precio_final',
+        declaracion: {
+          name: 'precio_final', description: 'Precio con descuento y/o en cuotas con los recargos que cobra el negocio. Primero conseguí el precio (si es de un producto, con consultar_ferreteria).',
+          parameters: { type: 'object', properties: {
+            monto: { type: 'number', description: 'Precio de lista en pesos.' },
+            descuento_porcentaje: { type: 'number', description: 'Descuento en % (opcional).' },
+            cuotas: { type: 'integer', description: 'Cantidad de cuotas (opcional).' } }, required: ['monto'] }
+        },
+        ejecutar: async args => {
+          const monto = Number(args && args.monto);
+          if (!(monto > 0)) return { error: 'Falta el precio.' };
+          const desc = Math.min(100, Math.max(0, Number(args.descuento_porcentaje) || 0));
+          let total = monto * (1 - desc / 100);
+          const res = { precio_lista: Math.round(monto), descuento_porcentaje: desc || undefined, con_descuento: desc ? Math.round(total) : undefined };
+          const n = parseInt(args.cuotas, 10);
+          if (n > 1) {
+            const tabla = (config.cuotas) || {};
+            if (tabla[n] === undefined) return Object.assign(res, { error: `No tengo cargado el recargo de ${n} cuotas. Se carga en Ajustes de Morsis («Recargos por cuotas»).`, cuotas_cargadas: Object.keys(tabla).map(Number) });
+            total = total * (1 + Number(tabla[n]) / 100);
+            Object.assign(res, { cuotas: n, recargo_porcentaje: Number(tabla[n]), total_en_cuotas: Math.round(total), valor_de_cada_cuota: Math.round(total / n) });
+          }
+          return res;
+        }
+      },
+      {
+        nombre: 'poner_recordatorio',
+        declaracion: {
+          name: 'poner_recordatorio', description: 'Recordatorio a una HORA del día ("recordame a las 5 llamar a Gas Sur"). Avisa en voz alta a esa hora. Para "en 20 minutos" usá poner_temporizador.',
+          parameters: { type: 'object', properties: {
+            hora: { type: 'string', description: 'Hora en formato 24 h "HH:MM". En el negocio "a las 5" es 17:00 (de 8 a 19 h): si dicen una hora de 1 a 7 sin "de la mañana", sumá 12.' },
+            texto: { type: 'string', description: 'Qué hay que recordar, corto. Ej: "llamar a Gas Sur".' } }, required: ['hora', 'texto'] }
+        },
+        ejecutar: async args => {
+          const m = String((args && args.hora) || '').match(/^(\d{1,2})(?::(\d{2}))?/);
+          if (!m) return { error: 'Falta la hora.' };
+          const hh = Number(m[1]), mm = Number(m[2] || 0);
+          if (hh > 23 || mm > 59) return { error: 'Esa hora no existe.' };
+          const texto = String(args.texto || '').trim().slice(0, 80) || 'recordatorio';
+          // Hora actual en Argentina (minutos desde las 00:00) → cuántos segundos faltan.
+          const partes = new Intl.DateTimeFormat('en-GB', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(ahora()).split(':').map(Number);
+          const ahoraSeg = partes[0] * 3600 + partes[1] * 60 + partes[2];
+          let falta = hh * 3600 + mm * 60 - ahoraSeg;
+          let manana = false;
+          if (falta <= 0) { falta += 86400; manana = true; }
+          temporizadores.poner(falta, texto, { recordatorio: true });
+          return { ok: true, hora: String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0'), texto, es_manana: manana || undefined };
+        }
+      },
+      {
+        nombre: 'feriados',
+        declaracion: { name: 'feriados', description: 'Próximos feriados nacionales de Argentina (con fecha y motivo). Para "¿el lunes es feriado?", "¿cuándo es el próximo feriado?". No lleva parámetros.' },
+        ejecutar: async () => {
+          const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: ZONA, year: 'numeric', month: '2-digit', day: '2-digit' }).format(ahora());
+          const anio = Number(hoy.slice(0, 4));
+          const traer = a => pedirJSON('https://api.argentinadatos.com/v1/feriados/' + a).catch(() => null);
+          const listas = await Promise.all([traer(anio), hoy.slice(5, 7) >= '11' ? traer(anio + 1) : null]);
+          const todos = listas.filter(Array.isArray).flat();
+          if (!todos.length) return { error: 'No pude consultar los feriados ahora.' };
+          const prox = todos.filter(f => f && f.fecha >= hoy).sort((a, b) => a.fecha.localeCompare(b.fecha)).slice(0, 6);
+          const dia = f => new Intl.DateTimeFormat('es-AR', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(f + 'T12:00:00Z'));
+          return { hoy, proximos: prox.map(f => ({ fecha: f.fecha, dia: dia(f.fecha), motivo: f.nombre, tipo: f.tipo })) };
+        }
+      },
+      {
         nombre: 'fecha_y_hora',
         declaracion: { name: 'fecha_y_hora', description: 'Fecha y hora actuales en Argentina. Usala para saber qué hora o qué día es, o para calcular cuánto falta hasta una hora. No lleva parámetros.' },
         ejecutar: async () => {
@@ -243,7 +321,7 @@
   /** ¿Es una pregunta del negocio? Entonces va directo al sistema (sin pasar por la IA de acá: más rápido). */
   function esDelNegocio(texto) {
     const t = sinTildes(texto);
-    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket|mercado ?libre|mercadolibre|en ml)\b/.test(t);
+    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket|mercado ?libre|mercadolibre|en ml|anota\w* que falta\w*|faltantes?|se (termino|acabo|esta acabando)|(que|le) falta|acabando|poco stock)\b/.test(t);
   }
 
   /**
@@ -304,6 +382,7 @@
       + new Intl.DateTimeFormat('es-AR', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
     return `Sos un asistente de voz personal, en español rioplatense, que habla con ${nombre || 'tu dueño'}. Ahora es ${hoy} (hora de Argentina).
 Tu respuesta se LEE EN VOZ ALTA: frases cortas y naturales, sin listas con guiones, sin markdown, sin emojis ni símbolos raros.
+Para cuentas y medidas usá "calcular" (nunca calcules de memoria); para descuentos y cuotas, "precio_final"; para recordatorios a una hora, "poner_recordatorio"; para feriados, "feriados".
 Para la hora, el clima, temporizadores y listas usá siempre las herramientas; nunca inventes un dato del clima ni de las listas.
 Para el tránsito usá "transito" (cómo está una autopista) o "tiempo_de_viaje" (cuánto tardo a un lugar); para el dólar, "dolar". Nunca mandes a mirar el mapa para eso. Si falta la clave de TomTom, decilo.
 Contá el tránsito en 1 o 2 frases: qué pasa, dónde (entre qué puntos) y cuánta demora; si no hay incidentes, decí que está normal.
@@ -575,7 +654,7 @@ Si es sobre tránsito, decí si hay cortes, accidentes, obras o demoras AHORA y 
           return { texto: ['Dólar ' + [v('oficial'), v('blue'), v('bolsa') || v('mep')].filter(Boolean).join('. '), '.'].join('').replace(/\.\./g, '.') };
         }
         const ferreteria = herramientas.find(h => h.nombre === 'consultar_ferreteria');
-        if (ferreteria && esDelNegocio(texto)) {
+        if (ferreteria && esDelNegocio(texto) && !/\b(descuento|cuotas?|recargo|por ciento)\b|%/.test(sinTildes(texto))) {
           const r = await ferreteria.ejecutar({ pregunta: texto });
           return { texto: r.error || r.respuesta || MENSAJES.vacio, error: r.error ? 'sistema' : undefined };
         }
