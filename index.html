@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v19</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v20</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -101,8 +101,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=19"></script>
-<script src="detector.js?v=19"></script>
+<script src="nucleo.js?v=20"></script>
+<script src="detector.js?v=20"></script>
 <script>
 (function(){
   'use strict';
@@ -293,13 +293,17 @@
   }
   // ---- Detector sin pitidos (detector.js): escucha "Morsis" offline y recién ahí abre el dictado de Google.
   let detector = null, detectorListo = false, cargandoDetector = false;
+  const oidos = [];
   function alOirDetector(t, final){
     if (ocupado || rec) return;
-    $('oido').textContent = 'Escuché: «' + t + '»';
+    if (final){ oidos.unshift(t); oidos.length = Math.min(oidos.length, 3); }
+    $('oido').textContent = 'Escuché: «' + t + '»' + (oidos.length ? '  · antes: ' + oidos.map(x => '«' + x + '»').join(' ') : '');
     if (!N.detectarActivacion(t, config.palabra).activado) return;
     detector.pausar();
     estado.textContent = '🎤 Te escucho… decí tu pedido';
-    escuchar();
+    pitidoCorto();
+    // Se espera un momento a que el detector suelte el micrófono antes de abrir el dictado de Google.
+    setTimeout(() => escuchar(), 350);
   }
   async function iniciarDetector(){
     if (!window.DetectorMorsis){ estado.textContent = 'No se cargó el detector sin pitidos.'; return; }

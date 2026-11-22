@@ -378,7 +378,10 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     const tolerancia = clave.length >= 6 ? 2 : 1;
     // Cómo suele escribir el dictado "Morsis" (se suman a la tolerancia de letras).
     const alias = clave === 'morsis' ? ['moises', 'moisés', 'morsi', 'morci', 'morcis', 'morris', 'mores', 'morfis', 'marcis', 'norsis', 'mercedes', 'merced'] : [];
-    const parecida = w => w.length >= 3 && (w === clave || alias.includes(w) || (w[0] === clave[0] && distancia(w, clave) <= tolerancia));
+    // El detector offline no conoce "Morsis" y escribe la palabra más parecida que sabe ("morsa", "mostrar", "moisés"…):
+    // para "morsis" se acepta cualquier palabra que arranque con "mor" o "mois".
+    const raizMorsis = w => clave === 'morsis' && w.length >= 4 && /^(mor|mois|mors)/.test(w);
+    const parecida = w => w.length >= 3 && (w === clave || alias.includes(w) || raizMorsis(w) || (w[0] === clave[0] && distancia(w, clave) <= tolerancia));
     for (let i = 0; i < palabras.length; i++) {
       let usadas = 0;
       if (parecida(palabras[i])) usadas = 1;
