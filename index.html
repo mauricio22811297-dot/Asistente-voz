@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v24</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v25</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -92,6 +92,9 @@
     <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
     <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
     <p class="ayuda" id="a-errordetector" style="color:#ff8a8a;"></p>
+    <button type="button" id="a-ensenar" class="secundario" style="margin:6px 0;">🎓 Enseñarle cómo digo «Morsis»</button>
+    <p class="ayuda" id="a-aprendidas"></p>
+    <button type="button" id="a-olvidar" class="secundario" style="margin:2px 0 8px;">Borrar lo aprendido</button>
     <div class="opcion"><input type="checkbox" id="a-sinpitidos"><label for="a-sinpitidos">Detector sin pitidos (beta): escucha «Morsis» dentro del celu, sin internet. Baja 40 MB una sola vez.</label></div>
     <div class="opcion"><input type="checkbox" id="a-voz" checked><label for="a-voz">Responder en voz alta</label></div>
     <div class="opcion"><input type="checkbox" id="a-pantalla"><label for="a-pantalla">Mantener la pantalla encendida</label></div>
@@ -104,8 +107,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=24"></script>
-<script src="detector.js?v=24"></script>
+<script src="nucleo.js?v=25"></script>
+<script src="detector.js?v=25"></script>
 <script>
 (function(){
   'use strict';
@@ -299,16 +302,40 @@
   // ---- Detector sin pitidos (detector.js): escucha "Morsis" offline y recién ahí abre el dictado de Google.
   let detector = null, detectorListo = false, cargandoDetector = false;
   const oidos = [];
+  // El detector offline no conoce la palabra "Morsis" y la escribe como le parece ("si muchas", "mercedes"…).
+  // Por eso aprende: lo que escuchó cuando le enseñaste, o lo último que oyó justo antes de que tocaras el micrófono.
+  const normal = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const COMUNES = new Set(['si', 'no', 'que', 'de', 'la', 'el', 'y', 'a', 'en', 'es', 'se', 'lo', 'un', 'una', 'me', 'te', 'le', 'ya', 'mas', 'bueno', 'eh', 'ah', 'o', 'los', 'las', 'con', 'por', 'para', 'al', 'del', 'mi', 'tu', 'su']);
+  const sirveParaAprender = t => { const n = normal(t); return n && n.split(' ').length <= 3 && !COMUNES.has(n) && n.length >= 4; };
+  function aprenderPalabra(t){
+    const n = normal(t); if (!sirveParaAprender(n)) return false;
+    const lista = (config.aprendidas || []).filter(x => x !== n);
+    lista.unshift(n); config.aprendidas = lista.slice(0, 15); guardarConfig(); return true;
+  }
+  const esAprendida = t => { const n = ' ' + normal(t) + ' '; return (config.aprendidas || []).some(a => n.includes(' ' + a + ' ')); };
+  let ensenando = 0, ultimoFinal = { t: '', cuando: 0 };
   function alOirDetector(t, final){
     if (ocupado || rec) return;
-    if (final){ oidos.unshift(t); oidos.length = Math.min(oidos.length, 3); }
+    if (final){ oidos.unshift(t); oidos.length = Math.min(oidos.length, 3); ultimoFinal = { t, cuando: Date.now() }; }
     $('oido').textContent = 'Escuché: «' + t + '»' + (oidos.length ? '  · antes: ' + oidos.map(x => '«' + x + '»').join(' ') : '');
-    if (!N.detectarActivacion(t, config.palabra).activado) return;
+    if (ensenando){
+      if (!final) return;
+      if (aprenderPalabra(t)) ensenando--;
+      estado.textContent = ensenando ? `🎓 Bien («${t}»). Decí «${config.palabra}» otra vez (faltan ${ensenando})` : '✅ Listo, aprendí cómo lo decís. Probá: «' + config.palabra + '»';
+      if (!ensenando) setTimeout(textoEnReposo, 4000);
+      return;
+    }
+    if (!N.detectarActivacion(t, config.palabra).activado && !esAprendida(t)) return;
     detector.pausar();
     estado.textContent = '🎤 Te escucho… decí tu pedido';
     pitidoCorto();
     // Se espera un momento a que el detector suelte el micrófono antes de abrir el dictado de Google.
     setTimeout(() => escuchar(), 350);
+  }
+  function ensenarPalabra(){
+    if (!config.sinPitidos || !detectorListo){ estado.textContent = 'Primero activá «Detector sin pitidos» en Ajustes y esperá que cargue.'; return; }
+    ensenando = 3;
+    estado.textContent = `🎓 Decí «${config.palabra}» 3 veces, con una pausa entre cada una`;
   }
   async function iniciarDetector(){
     if (!window.DetectorMorsis){ estado.textContent = 'No se cargó el detector sin pitidos.'; return; }
@@ -454,7 +481,14 @@
     };
     try{ r.start(); }catch(_){ rec = null; mic.classList.remove('escuchando'); }
   }
-  mic.addEventListener('click', () => escuchar());
+  mic.addEventListener('click', () => {
+    // Si el detector oyó algo cortito justo antes de que tocaras, seguro era tu «Morsis» que no reconoció: lo aprende.
+    if (config.sinPitidos && !ensenando && ultimoFinal.t && Date.now() - ultimoFinal.cuando < 6000 && !esAprendida(ultimoFinal.t)
+      && !N.detectarActivacion(ultimoFinal.t, config.palabra).activado && aprenderPalabra(ultimoFinal.t))
+      $('oido').textContent = '🎓 Aprendí que «' + ultimoFinal.t + '» es «' + config.palabra + '».';
+    ultimoFinal = { t: '', cuando: 0 };
+    escuchar();
+  });
 
   // ------------------------------------------------ pantalla encendida
   let wakeLock = null;
@@ -473,10 +507,13 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
+  function pintarAprendidas(){ const a = config.aprendidas || []; $('a-aprendidas').textContent = a.length ? 'Ya aprendió: ' + a.map(x => '«' + x + '»').join(', ') : 'Todavía no aprendió cómo lo decís.'; }
+  $('a-ensenar').addEventListener('click', () => { dlg.close(); ensenarPalabra(); });
+  $('a-olvidar').addEventListener('click', () => { config.aprendidas = []; guardarConfig(); pintarAprendidas(); });
   $('a-cancelar').addEventListener('click', () => dlg.close());
   $('a-probar').addEventListener('click', () => { const v = config.voz; config.voz = true; decir('Hola, soy tu asistente. Si me escuchás, la voz funciona.'); config.voz = v; });
   $('form-ajustes').addEventListener('submit', async e => {
