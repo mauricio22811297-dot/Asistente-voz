@@ -228,3 +228,15 @@ test('lo de sumar al ticket va al sistema, con la compu elegida', async () => {
   await c.consultar('sumá un codo');
   assert.equal(pedidos[0].compu, 'Compu 1');
 });
+
+test('códigos dictados: se arman (S030, M1234, PL25) sin romper medidas ni frases comunes', () => {
+  const n = N.normalizarCodigos;
+  assert.equal(n('sumá 2 s 030'), 'sumá 2 S030');
+  assert.equal(n('sumá dos ese cero treinta'), 'sumá dos S030');
+  assert.equal(n('cargá eme 12 34'), 'cargá M1234');
+  assert.equal(n('precio de la pe ele 25'), 'precio de la PL25');
+  assert.equal(n('sumá una cinta de 3 metros'), 'sumá una cinta de 3 metros');
+  assert.equal(n('agregá una te 25'), 'agregá una te 25');
+  assert.equal(n('sumá 4 a 5 tornillos'), 'sumá 4 a 5 tornillos');
+  assert.equal(n('precio del codo de 3/4'), 'precio del codo de 3/4');
+});

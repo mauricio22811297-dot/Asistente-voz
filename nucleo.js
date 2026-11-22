@@ -196,7 +196,7 @@
       try {
         r = await sistema.fetchFn(url + '/api/morsis/consulta', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + codigo },
-          body: JSON.stringify({ texto: String(pregunta || '').slice(0, 500), compu: String((sistema.compu && sistema.compu()) || '').slice(0, 40) })
+          body: JSON.stringify({ texto: normalizarCodigos(String(pregunta || '')).slice(0, 500), compu: String((sistema.compu && sistema.compu()) || '').slice(0, 40) })
         });
       } catch (_) { return { error: 'No pude conectarme con el sistema de la ferretería.' }; }
       let j = {};
@@ -221,6 +221,33 @@
   function esDelNegocio(texto) {
     const t = sinTildes(texto);
     return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket)\b/.test(t);
+  }
+
+  /**
+   * Códigos dictados → como están en las listas: "ese cero treinta" → "S030", "s 030" → "S030", "eme 12 34" → "M1234".
+   * El dictado separa la letra de los números o la escribe con su nombre. Solo se toca una letra suelta seguida de números.
+   */
+  const LETRAS = { a: 'A', be: 'B', ce: 'C', de: 'D', e: 'E', efe: 'F', ge: 'G', hache: 'H', i: 'I', jota: 'J', ka: 'K', ele: 'L', eme: 'M',
+    ene: 'N', o: 'O', pe: 'P', cu: 'Q', erre: 'R', ere: 'R', ese: 'S', te: 'T', u: 'U', ve: 'V', uve: 'V', equis: 'X', zeta: 'Z', seta: 'Z' };
+  const DIGITOS = { cero: '0', uno: '1', una: '1', dos: '2', tres: '3', cuatro: '4', cinco: '5', seis: '6', siete: '7', ocho: '8', nueve: '9', diez: '10',
+    once: '11', doce: '12', trece: '13', catorce: '14', quince: '15', veinte: '20', treinta: '30', cuarenta: '40', cincuenta: '50' };
+  // Palabras que también son letras pero casi siempre son otra cosa ("de 3 metros", "4 a 5", "una te"): no arman código.
+  const NO_LETRA = new Set(['de', 'te', 'a', 'e', 'o', 'u', 'y', 'i', 'una', 'se', 'ce']);
+  function normalizarCodigos(texto) {
+    const palabras = String(texto || '').split(/\s+/).filter(Boolean);
+    const limpia = w => sinTildes(w).replace(/[.,;:]$/, '');
+    const letraDe = w => (NO_LETRA.has(w) ? null : (/^[a-z]$/.test(w) ? w.toUpperCase() : (LETRAS[w] || null)));
+    const numeroDe = w => (/^\d+$/.test(w) ? w : (DIGITOS[w] !== undefined ? DIGITOS[w] : null));
+    const out = [];
+    for (let i = 0; i < palabras.length; i++) {
+      let letras = '', j = i;
+      while (j < palabras.length && letraDe(limpia(palabras[j]))) { letras += letraDe(limpia(palabras[j])); j++; }
+      let numero = '', k = j;
+      while (letras && k < palabras.length && numeroDe(limpia(palabras[k])) !== null) { numero += numeroDe(limpia(palabras[k])); k++; }
+      if (letras && numero) { out.push(letras + numero); i = k - 1; continue; }
+      out.push(palabras[i]);
+    }
+    return out.join(' ');
   }
 
   /**
@@ -433,5 +460,5 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     return { responder, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });
