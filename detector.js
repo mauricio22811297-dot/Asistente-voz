@@ -123,6 +123,8 @@
       nodo = ctx.createScriptProcessor(4096, 1, 1);
       nodo.onaudioprocess = e => { if (!pausado && reconocedor) { try { reconocedor.acceptWaveform(e.inputBuffer); } catch (_) {} } };
       fuente.connect(nodo); nodo.connect(ctx.destination);
+      // Chrome arranca el audio "dormido" si no hubo un toque en la pantalla: se intenta despertar.
+      if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (_) {} }
     }
     function cerrarMicrofono() {
       try { nodo && nodo.disconnect(); fuente && fuente.disconnect(); } catch (_) {}
@@ -155,6 +157,14 @@
       pausar() { pausado = true; cerrarMicrofono(); },
       async reanudar() { if (!modelo) return; if (!stream) await abrirMicrofono(); pausado = false; },
       get activo() { return !!modelo && !pausado; },
+      // true si el micrófono está abierto pero Chrome tiene el audio dormido (hace falta un toque) o se cortó.
+      get dormido() { return !!modelo && !pausado && (!ctx || ctx.state !== 'running' || !stream || !stream.getAudioTracks().some(t => t.readyState === 'live')); },
+      async despertar() {
+        if (!modelo || pausado) return;
+        if (stream && !stream.getAudioTracks().some(t => t.readyState === 'live')) cerrarMicrofono();
+        if (!stream) await abrirMicrofono();
+        if (ctx && ctx.state === 'suspended') await ctx.resume();
+      },
       detener() { pausado = true; cerrarMicrofono(); try { modelo && modelo.terminate(); } catch (_) {} modelo = reconocedor = null; }
     };
   }
