@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v7</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v8</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -96,7 +96,7 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=7"></script>
+<script src="nucleo.js?v=8"></script>
 <script>
 (function(){
   'use strict';
@@ -246,6 +246,13 @@
     await decir(r.texto);
     ocupado = false; mic.disabled = false;
     textoEnReposo();
+    // Charla seguida: unos segundos después de responder se puede repreguntar SIN decir "Morsis"
+    // ("no, el de media pulgada"). Recuerda lo anterior.
+    if (config.manosLibres){
+      esperandoOrden = Date.now() + 9000;
+      estado.textContent = '🎤 ¿Algo más? (podés seguir sin decir «' + config.palabra + '»)';
+      setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 9200);
+    }
     iniciarFondo();
   }
   function textoEnReposo(){
@@ -259,7 +266,12 @@
     t = String(t || '').trim();
     if (!t || ocupado) return false;
     $('oido').textContent = 'Escuché: «' + t + '»';
-    if (esperandoOrden && Date.now() < esperandoOrden){ esperandoOrden = 0; enviar(t); return true; }
+    if (esperandoOrden && Date.now() < esperandoOrden){
+      esperandoOrden = 0;
+      if (/^(nada|no nada|gracias|listo|chau|ok|okey|esta bien|está bien|cancel\w*|basta)[.!]*$/i.test(t)){ textoEnReposo(); return true; }
+      const a0 = N.detectarActivacion(t, config.palabra);
+      enviar(a0.activado && a0.orden ? a0.orden : t); return true;
+    }
     esperandoOrden = 0;
     const a = N.detectarActivacion(t, config.palabra);
     if (!a.activado) return false;
