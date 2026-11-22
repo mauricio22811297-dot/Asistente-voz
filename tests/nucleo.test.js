@@ -162,3 +162,26 @@ test('respuestas rápidas sin IA: hora, temporizador, cancelar, clima, cómo lle
   assert.equal(await r('contame un chiste'), null);
   assert.equal(await r('cuánto es el 25% de 1800'), null);
 });
+
+test('ferretería: lo del negocio va directo al sistema con el código; sin vincular avisa; errores claros', async () => {
+  const pedidos = [];
+  const fetchFn = async (url, o) => { pedidos.push({ url, o }); return { ok: true, status: 200, json: async () => ({ texto: 'El codo sale $1.200.' }) }; };
+  let cod = 'MRS-abc';
+  const conector = N.crearConectorFerreteria({ url: () => 'https://sistema.x.com/', codigo: () => cod, fetchFn });
+  const herramientas = N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas({ get: () => null, set: () => {} }),
+    temporizadores: { poner() {}, cancelarTodos: () => 0 }, conectores: [conector.herramienta] });
+  let geminiLlamado = false;
+  const c = N.crearCerebro({ fetchFn: async () => { geminiLlamado = true; throw new Error('no'); }, getClave: () => 'K', herramientas });
+  assert.equal((await c.responder('¿Cuánto sale el codo de fusión de tres cuartos?')).texto, 'El codo sale $1.200.');
+  assert.equal(geminiLlamado, false);
+  assert.equal(pedidos[0].url, 'https://sistema.x.com/api/morsis/consulta');
+  assert.equal(pedidos[0].o.headers.Authorization, 'Bearer MRS-abc');
+  assert.ok(N.esDelNegocio('cuánto debe García')); assert.ok(N.esDelNegocio('cuánto vendimos hoy')); assert.ok(!N.esDelNegocio('contame un chiste'));
+  cod = '';
+  assert.match((await conector.consultar('precio')).error, /Falta vincular/);
+  cod = 'MRS-x';
+  const malo = N.crearConectorFerreteria({ url: () => 'https://s', codigo: () => cod, fetchFn: async () => ({ ok: false, status: 401, json: async () => ({ error: 'Código inválido.' }) }) });
+  assert.equal((await malo.consultar('precio')).error, 'Código inválido.');
+  const caido = N.crearConectorFerreteria({ url: () => 'https://s', codigo: () => cod, fetchFn: async () => { throw new Error('x'); } });
+  assert.match((await caido.consultar('precio')).error, /No pude conectarme/);
+});

@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v5</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v6</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -60,7 +60,7 @@
   <button id="mic" aria-label="Tocar para hablar">🎤</button>
   <div id="estado" role="status">Tocá el micrófono para hablar</div>
   <button id="btn-modo" class="modo">👂 Manos libres</button>
-  <div class="ejemplos">Decí «Morsis» y después: «qué hora es», «cómo está el clima», «poné un temporizador de 10 minutos», «anotá pan en la lista de compras», «contame un chiste».</div>
+  <div class="ejemplos">Decí «Morsis» y después: «cuánto sale el codo de fusión de tres cuartos», «qué hora es», «cómo está el clima», «poné un temporizador de 10 minutos», «anotá pan en la lista de compras», «contame un chiste».</div>
 
   <div class="panel" id="panel-temporizadores" hidden></div>
   <div class="panel" id="panel-listas" hidden></div>
@@ -77,6 +77,11 @@
     <input type="text" id="a-nombre" autocomplete="off" placeholder="Para que te hable por tu nombre">
     <label class="campo" for="a-lugar">Ciudad para el clima</label>
     <input type="text" id="a-lugar" autocomplete="off" placeholder="Ej: Hurlingham">
+    <label class="campo" for="a-sistema">Dirección del sistema de la ferretería</label>
+    <input type="text" id="a-sistema" autocomplete="off" placeholder="https://sistema.ferreteriadnjr.com.ar">
+    <label class="campo" for="a-codigo">Código de vinculación</label>
+    <input type="password" id="a-codigo" autocomplete="off" placeholder="MRS-… (se genera en el sistema)">
+    <p class="ayuda">En el sistema: Caja y reportes → Asistente → Morsis → Generar código.</p>
     <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
     <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
     <div class="opcion"><input type="checkbox" id="a-voz" checked><label for="a-voz">Responder en voz alta</label></div>
@@ -90,7 +95,7 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=5"></script>
+<script src="nucleo.js?v=6"></script>
 <script>
 (function(){
   'use strict';
@@ -104,7 +109,7 @@
     set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} }
   };
   const CLAVE_CONFIG = 'asistente.config';
-  const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false, manosLibres: true, palabra: 'Morsis' };
+  const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false, manosLibres: true, palabra: 'Morsis', sistema: 'https://sistema.ferreteriadnjr.com.ar', codigo: '' };
   let config = Object.assign({}, porDefecto);
   try { Object.assign(config, JSON.parse(almacen.get(CLAVE_CONFIG) || '{}')); } catch (_) {}
   const guardarConfig = () => almacen.set(CLAVE_CONFIG, JSON.stringify(config));
@@ -209,7 +214,7 @@
       a.className = 'msg ia'; a.style.fontWeight = '700'; a.textContent = '🗺️ ' + texto;
       $('conversacion').appendChild(a); a.scrollIntoView({ block: 'nearest' });
     },
-    conectores: window.CONECTORES || []   // acá se enchufa más adelante el sistema de la ferretería (ver nucleo.js)
+    conectores: [N.crearConectorFerreteria({ url: () => config.sistema, codigo: () => config.codigo, fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(40000) })) }).herramienta].concat(window.CONECTORES || [])   // acá se enchufa más adelante el sistema de la ferretería (ver nucleo.js)
   });
   const mic = $('mic'), estado = $('estado');
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
@@ -353,7 +358,7 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
@@ -372,7 +377,7 @@
       }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
     }
     config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
-    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
+    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
     guardarConfig(); aplicarPantalla(); pintarModo(); dlg.close(); iniciarFondo();
     mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
   });

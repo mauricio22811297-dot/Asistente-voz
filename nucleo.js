@@ -183,6 +183,46 @@
     return herramientas.concat(contexto.conectores || []);
   }
 
+  /**
+   * CONECTOR del sistema de la ferretería: manda la pregunta al sistema (que tiene su propia IA con acceso a precios,
+   * stock, clientes y ventas) y devuelve la respuesta. sistema: { url(), codigo(), fetchFn }.
+   */
+  function crearConectorFerreteria(sistema) {
+    async function consultar(pregunta) {
+      const url = String(sistema.url() || '').trim().replace(/\/+$/, '');
+      const codigo = String(sistema.codigo() || '').trim();
+      if (!url || !codigo) return { error: 'Falta vincular el sistema de la ferretería en Ajustes (dirección y código).' };
+      let r;
+      try {
+        r = await sistema.fetchFn(url + '/api/morsis/consulta', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + codigo },
+          body: JSON.stringify({ texto: String(pregunta || '').slice(0, 500) })
+        });
+      } catch (_) { return { error: 'No pude conectarme con el sistema de la ferretería.' }; }
+      let j = {};
+      try { j = await r.json(); } catch (_) {}
+      if (!r.ok) return { error: j.error || ('El sistema respondió con error ' + r.status + '.') };
+      return { respuesta: String(j.texto || '') };
+    }
+    return {
+      consultar,
+      herramienta: {
+        nombre: 'consultar_ferreteria',
+        declaracion: {
+          name: 'consultar_ferreteria',
+          description: 'Consulta el sistema de la ferretería: precios y stock de productos, saldo o deuda de clientes, proveedores, pedidos y ventas del día. Pasale la pregunta tal como la dijo la persona.',
+          parameters: { type: 'object', properties: { pregunta: { type: 'string' } }, required: ['pregunta'] }
+        },
+        ejecutar: async a => consultar(a && a.pregunta)
+      }
+    };
+  }
+  /** ¿Es una pregunta del negocio? Entonces va directo al sistema (sin pasar por la IA de acá: más rápido). */
+  function esDelNegocio(texto) {
+    const t = sinTildes(texto);
+    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes)\b/.test(t);
+  }
+
   function instrucciones({ nombre, ahora }) {
     const d = ahora();
     const hoy = new Intl.DateTimeFormat('es-AR', { timeZone: ZONA, dateStyle: 'full' }).format(d) + ', '
@@ -309,6 +349,11 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
       try {
         const rapida = await respuestaRapida(texto, herramientas).catch(() => null);
         if (rapida) return rapida;
+        const ferreteria = herramientas.find(h => h.nombre === 'consultar_ferreteria');
+        if (ferreteria && esDelNegocio(texto)) {
+          const r = await ferreteria.ejecutar({ pregunta: texto });
+          return { texto: r.error || r.respuesta || MENSAJES.vacio, error: r.error ? 'sistema' : undefined };
+        }
         const turnos = memoria.hasta > Date.now() ? memoria.turnos.slice() : [];
         const contents = turnos.map(t => ({ role: t.rol, parts: [{ text: t.texto }] }));
         const pedido = String(texto || '').slice(0, 1000);
@@ -351,5 +396,5 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     return { responder, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { crearListas, crearHerramientas, crearCerebro, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });
