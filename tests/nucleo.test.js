@@ -282,3 +282,11 @@ test('tránsito en vivo (TomTom) y dólar (dolarapi), sin gastar', async () => {
   const d = await c.responder('a cuánto está el dólar hoy');
   assert.equal(d.texto, 'Dólar Oficial: compra 1400, venta 1450. Blue: compra 1480, venta 1500. Bolsa: compra 1470, venta 1475.');
 });
+
+test('"a cuánto está el dólar" va al dólar y no a la ferretería', async () => {
+  const pedirJSON = async () => [{ nombre: 'Oficial', compra: 1400, venta: 1450 }, { nombre: 'Blue', compra: 1480, venta: 1500 }];
+  const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON, listas: N.crearListas(almacenEnMemoria()), temporizadores: { poner() {}, cancelarTodos: () => 0 },
+    conectores: [{ nombre: 'consultar_ferreteria', declaracion: { name: 'consultar_ferreteria' }, ejecutar: async () => ({ respuesta: 'No tengo esa información.' }) }] });
+  const c = N.crearCerebro({ fetchFn: async () => { throw new Error('no'); }, getClave: () => 'K', herramientas: h });
+  for (const p of ['A cuánto está el dólar?', 'precio del dólar blue']) assert.match((await c.responder(p)).texto, /^Dólar Oficial: compra 1400/);
+});

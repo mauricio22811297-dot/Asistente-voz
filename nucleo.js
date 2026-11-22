@@ -567,17 +567,17 @@ Si es sobre tránsito, decí si hay cortes, accidentes, obras o demoras AHORA y 
       try {
         const rapida = await respuestaRapida(texto, herramientas).catch(() => null);
         if (rapida) return rapida;
-        const ferreteria = herramientas.find(h => h.nombre === 'consultar_ferreteria');
-        if (ferreteria && esDelNegocio(texto)) {
-          const r = await ferreteria.ejecutar({ pregunta: texto });
-          return { texto: r.error || r.respuesta || MENSAJES.vacio, error: r.error ? 'sistema' : undefined };
-        }
         const dolar = herramientas.find(h => h.nombre === 'dolar');
-        if (dolar && /\bdolar(es)?\b/.test(sinTildes(texto)) && !/\b(precio|cuanto sale|stock)\b.*\bdolar/.test(sinTildes(texto))) {
+        if (dolar && /\bdolar(es)?\b/.test(sinTildes(texto)) && !/\b(cuanto sale|stock|en dolares)\b/.test(sinTildes(texto))) {
           const r = await dolar.ejecutar();
           if (r.error) return { texto: r.error };
           const v = n => { const c = r.cotizaciones.find(x => sinTildes(x.tipo).includes(n)); return c ? `${c.tipo}: compra ${Math.round(c.compra)}, venta ${Math.round(c.venta)}` : ''; };
           return { texto: ['Dólar ' + [v('oficial'), v('blue'), v('bolsa') || v('mep')].filter(Boolean).join('. '), '.'].join('').replace(/\.\./g, '.') };
+        }
+        const ferreteria = herramientas.find(h => h.nombre === 'consultar_ferreteria');
+        if (ferreteria && esDelNegocio(texto)) {
+          const r = await ferreteria.ejecutar({ pregunta: texto });
+          return { texto: r.error || r.respuesta || MENSAJES.vacio, error: r.error ? 'sistema' : undefined };
         }
         const web = herramientas.find(h => h.nombre === 'buscar_en_internet');
         if (web && ES_DE_AHORA.test(sinTildes(texto))) {
