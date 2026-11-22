@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v20</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v21</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -101,8 +101,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=20"></script>
-<script src="detector.js?v=20"></script>
+<script src="nucleo.js?v=21"></script>
+<script src="detector.js?v=21"></script>
 <script>
 (function(){
   'use strict';
@@ -210,6 +210,7 @@
   const herramientas = N.crearHerramientas({
     ahora: () => new Date(),
     pedirJSON: async url => { const r = await fetch(url, { signal: AbortSignal.timeout(10000) }); if (!r.ok) throw new Error('http ' + r.status); return r.json(); },
+    buscarWeb: N.crearBuscadorWeb({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave }),
     listas, config: { get lat(){ return config.lat; }, get lon(){ return config.lon; }, get lugar(){ return config.lugar; } },
     temporizadores: {
       poner: nuevoTemporizador,
@@ -227,7 +228,7 @@
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
     alAvisar: paso => {
       const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
-        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…' };
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:buscar_en_internet': '🔎 Buscando en internet…' };
       estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
     } });
 

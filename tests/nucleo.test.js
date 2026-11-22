@@ -240,3 +240,18 @@ test('códigos dictados: se arman (S030, M1234, PL25) sin romper medidas ni fras
   assert.equal(n('sumá 4 a 5 tornillos'), 'sumá 4 a 5 tornillos');
   assert.equal(n('precio del codo de 3/4'), 'precio del codo de 3/4');
 });
+
+test('el tránsito y lo de "ahora" se buscan en internet (Google), y lo del negocio sigue yendo a la ferretería', async () => {
+  const cuerpos = [];
+  const fetchFn = async (u, o) => { cuerpos.push(JSON.parse(o.body)); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'Hay un choque en la Panamericana a la altura de Pacheco.' }] } }] }) }; };
+  const consultas = [];
+  const conector = { nombre: 'consultar_ferreteria', declaracion: { name: 'consultar_ferreteria' }, ejecutar: async a => { consultas.push(a.pregunta); return { respuesta: 'Sale 5000 pesos.' }; } };
+  const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas(almacenEnMemoria()),
+    temporizadores: { poner() {}, cancelarTodos: () => 0 }, conectores: [conector], buscarWeb: N.crearBuscadorWeb({ fetchFn, getClave: () => 'K' }) });
+  const c = N.crearCerebro({ fetchFn, getClave: () => 'K', herramientas: h });
+  const r = await c.responder('¿Cómo está la Panamericana?');
+  assert.match(r.texto, /Pacheco/);
+  assert.ok(cuerpos[0].tools[0].google_search);
+  await c.responder('cuánto sale el disco de corte');
+  assert.deepEqual(consultas, ['cuánto sale el disco de corte']);
+});
