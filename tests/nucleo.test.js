@@ -326,3 +326,16 @@ test('con "descuento" o "cuotas" no va directo a la ferretería: pasa por la IA 
   await c.responder('cuánto sale el codo de 1/2');
   assert.equal(llamoGemini, false); assert.equal(preguntas.length, 1);
 });
+
+test('"abramos una venta" va al sistema, y lo que se dice enseguida ("dos codos de 3/4") también', async () => {
+  const preguntas = [];
+  const conector = { nombre: 'consultar_ferreteria', declaracion: { name: 'consultar_ferreteria' }, ejecutar: async a => { preguntas.push(a.pregunta); return { respuesta: 'Dale, ¿qué sumo?' }; } };
+  const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas(almacenEnMemoria()), temporizadores: { poner() {}, cancelarTodos: () => 0 }, conectores: [conector] });
+  let gemini = 0;
+  const c = N.crearCerebro({ fetchFn: async () => { gemini++; return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }) }; }, getClave: () => 'K', herramientas: h });
+  assert.equal((await c.responder('abramos una venta')).texto, 'Dale, ¿qué sumo?');
+  await c.responder('dos codos de tres cuartos');
+  assert.deepEqual(preguntas, ['abramos una venta', 'dos codos de tres cuartos']);
+  await c.responder('recordame a las 5 llamar a gas sur');
+  assert.equal(preguntas.length, 2); assert.equal(gemini, 1);
+});

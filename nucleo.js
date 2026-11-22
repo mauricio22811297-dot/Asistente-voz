@@ -321,7 +321,7 @@
   /** ¿Es una pregunta del negocio? Entonces va directo al sistema (sin pasar por la IA de acá: más rápido). */
   function esDelNegocio(texto) {
     const t = sinTildes(texto);
-    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket|mercado ?libre|mercadolibre|en ml|anota\w* que falta\w*|faltantes?|se (termino|acabo|esta acabando)|(que|le) falta|acabando|poco stock)\b/.test(t);
+    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket|mercado ?libre|mercadolibre|en ml|(abri|abr[ai]mos|arranca|arranquemos|empeza|empecemos|nueva|otra)\w* (una |la )?venta|anota\w* que falta\w*|faltantes?|se (termino|acabo|esta acabando)|(que|le) falta|acabando|poco stock)\b/.test(t);
   }
 
   /**
@@ -642,6 +642,7 @@ Si es sobre tránsito, decí si hay cortes, accidentes, obras o demoras AHORA y 
   // ---------------------------------------------------------------- cerebro
   function crearCerebro({ fetchFn, getClave, getNombre, herramientas, ahora = () => new Date(), alAvisar = () => {} }) {
     let memoria = { turnos: [], hasta: 0 };
+    let negocioHasta = 0;
     async function responder(texto) {
       try {
         const rapida = await respuestaRapida(texto, herramientas).catch(() => null);
@@ -654,7 +655,12 @@ Si es sobre tránsito, decí si hay cortes, accidentes, obras o demoras AHORA y 
           return { texto: ['Dólar ' + [v('oficial'), v('blue'), v('bolsa') || v('mep')].filter(Boolean).join('. '), '.'].join('').replace(/\.\./g, '.') };
         }
         const ferreteria = herramientas.find(h => h.nombre === 'consultar_ferreteria');
-        if (ferreteria && esDelNegocio(texto) && !/\b(descuento|cuotas?|recargo|por ciento)\b|%/.test(sinTildes(texto))) {
+        const cuenta = /\b(descuento|cuotas?|recargo|por ciento)\b|%/.test(sinTildes(texto));
+        // Si recién se habló con el sistema ("abramos una venta" → "¿qué sumo?" → "dos codos de 3/4"),
+        // lo que se dice enseguida también va al sistema, aunque no tenga palabras de negocio.
+        const seguimientoNegocio = Date.now() < negocioHasta && !/\b(clima|feriados?|recorda\w*|temporizador\w*|listas?|dolar\w*|transito|tardo)\b/.test(sinTildes(texto));
+        if (ferreteria && (esDelNegocio(texto) || seguimientoNegocio) && !cuenta) {
+          negocioHasta = Date.now() + 2 * 60 * 1000;
           const r = await ferreteria.ejecutar({ pregunta: texto });
           return { texto: r.error || r.respuesta || MENSAJES.vacio, error: r.error ? 'sistema' : undefined };
         }
