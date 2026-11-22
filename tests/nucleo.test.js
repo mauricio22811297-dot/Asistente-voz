@@ -255,3 +255,30 @@ test('el tránsito y lo de "ahora" se buscan en internet (Google), y lo del nego
   await c.responder('cuánto sale el disco de corte');
   assert.deepEqual(consultas, ['cuánto sale el disco de corte']);
 });
+
+test('tránsito en vivo (TomTom) y dólar (dolarapi), sin gastar', async () => {
+  const pedidas = [];
+  const pedirJSON = async url => {
+    pedidas.push(url);
+    if (url.includes('incidentDetails')) return { incidents: [
+      { properties: { iconCategory: 1, magnitudeOfDelay: 3, events: [{ description: 'Accidente' }], from: 'Panamericana (Ramal Pilar) - Av. Márquez', to: 'Panamericana - Ruta 197', delay: 900, length: 2300, roadNumbers: ['RN9'] } },
+      { properties: { iconCategory: 6, magnitudeOfDelay: 1, events: [{ description: 'Tránsito lento' }], from: 'Av. General Paz', to: 'Av. Constituyentes', delay: 120, roadNumbers: [] } }
+    ] };
+    if (url.includes('/search/2/search/')) return { results: [{ position: { lat: -34.45, lon: -58.91 }, address: { freeformAddress: 'Pilar, Buenos Aires' } }] };
+    if (url.includes('calculateRoute')) return { routes: [{ summary: { lengthInMeters: 41200, travelTimeInSeconds: 2700, noTrafficTravelTimeInSeconds: 1800, trafficDelayInSeconds: 900 } }] };
+    if (url.includes('dolarapi')) return [{ nombre: 'Oficial', compra: 1400, venta: 1450, fechaActualizacion: 'x' }, { nombre: 'Blue', compra: 1480, venta: 1500 }, { nombre: 'Bolsa', compra: 1470, venta: 1475 }];
+    return null;
+  };
+  const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON, listas: N.crearListas(almacenEnMemoria()), temporizadores: { poner() {}, cancelarTodos: () => 0 },
+    tomtom: () => 'TT', config: { lat: -34.59, lon: -58.63, lugar: 'Hurlingham' } });
+  const t = await h.find(x => x.nombre === 'transito').ejecutar({ via: 'la Panamericana' });
+  assert.equal(t.via, 'panamericana'); assert.equal(t.incidentes.length, 1);
+  assert.equal(t.incidentes[0].que, 'un accidente'); assert.equal(t.incidentes[0].minutos_de_demora, 15);
+  const v = await h.find(x => x.nombre === 'tiempo_de_viaje').ejecutar({ destino: 'Pilar' });
+  assert.equal(v.minutos_con_transito, 45); assert.equal(v.minutos_de_demora, 15); assert.equal(v.kilometros, 41.2);
+  const sin = N.crearHerramientas({ ahora: () => new Date(), pedirJSON, listas: N.crearListas(almacenEnMemoria()), temporizadores: { poner() {}, cancelarTodos: () => 0 }, tomtom: () => '' });
+  assert.match((await sin.find(x => x.nombre === 'transito').ejecutar({ via: 'General Paz' })).error, /TomTom/);
+  const c = N.crearCerebro({ fetchFn: async () => { throw new Error('no debería llamar a Gemini'); }, getClave: () => 'K', herramientas: h });
+  const d = await c.responder('a cuánto está el dólar hoy');
+  assert.equal(d.texto, 'Dólar Oficial: compra 1400, venta 1450. Blue: compra 1480, venta 1500. Bolsa: compra 1470, venta 1475.');
+});

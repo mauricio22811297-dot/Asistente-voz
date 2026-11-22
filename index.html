@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v22</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v23</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -85,6 +85,9 @@
     <p class="ayuda">En el sistema: Caja y reportes → Asistente → Morsis → Generar código.</p>
     <label class="campo" for="a-compu">Compu donde sumar al ticket</label>
     <input type="text" id="a-compu" autocomplete="off" placeholder="Ej: Compu 1 (el mismo nombre que le pusiste en el sistema)">
+    <label class="campo" for="a-tomtom">Clave de TomTom (tránsito en vivo, gratis)</label>
+    <input type="password" id="a-tomtom" autocomplete="off" placeholder="Se saca gratis en developer.tomtom.com">
+    <p class="ayuda">Para preguntar «¿cómo está la Panamericana?» o «¿cuánto tardo a Pilar?».</p>
     <div class="opcion"><input type="checkbox" id="a-avisos" checked><label for="a-avisos">Avisar en voz alta las transferencias que entran</label></div>
     <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
     <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
@@ -101,8 +104,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=22"></script>
-<script src="detector.js?v=22"></script>
+<script src="nucleo.js?v=23"></script>
+<script src="detector.js?v=23"></script>
 <script>
 (function(){
   'use strict';
@@ -210,7 +213,8 @@
   const herramientas = N.crearHerramientas({
     ahora: () => new Date(),
     pedirJSON: async url => { const r = await fetch(url, { signal: AbortSignal.timeout(10000) }); if (!r.ok) throw new Error('http ' + r.status); return r.json(); },
-    buscarWeb: N.crearBuscadorWeb({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave }),
+    tomtom: () => config.tomtom,
+    posicion: () => new Promise(ok => { if (!navigator.geolocation) return ok(null); navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lon: p.coords.longitude }), () => ok(null), { timeout: 5000, maximumAge: 300000 }); }),
     listas, config: { get lat(){ return config.lat; }, get lon(){ return config.lon; }, get lugar(){ return config.lugar; } },
     temporizadores: {
       poner: nuevoTemporizador,
@@ -228,7 +232,7 @@
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
     alAvisar: paso => {
       const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
-        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:buscar_en_internet': '🔎 Buscando en internet…' };
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…' };
       estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
     } });
 
@@ -469,7 +473,7 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
@@ -488,7 +492,7 @@
       }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
     }
     config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
-    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
+    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.tomtom = $('a-tomtom').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
     guardarConfig(); aplicarPantalla(); pintarModo(); dlg.close(); iniciarFondo();
     mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
   });
