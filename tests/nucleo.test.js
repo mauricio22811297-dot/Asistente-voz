@@ -191,3 +191,7 @@ test('palabra de activación: formas comunes del dictado ("Moisés", "Norsis")',
   assert.equal(N.detectarActivacion('norsis', 'Morsis').activado, true);
   assert.equal(N.detectarActivacion('mostrador', 'Morsis').activado, false);
 });
+
+test('palabra de activación: el detector offline escribe «Mercedes»', () => {
+  assert.equal(N.detectarActivacion('mercedes', 'Morsis').activado, true);
+});
