@@ -14,7 +14,8 @@
   const LIB = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
   const FFLATE = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
   const MODELO_ZIP = 'https://huggingface.co/localstack/vosk-models/resolve/main/vosk-model-small-es-0.42.zip';
-  const CACHE = 'morsis-modelo-v1';
+  const CACHE = 'morsis-modelo-v2';   // v2: el .tar lleva las carpetas (sin ellas la librería no abre el modelo)
+  const CACHE_VIEJO = 'morsis-modelo-v1';
   const CLAVE_CACHE = './modelo-es.tar.gz';
 
   const cargarScript = src => new Promise((ok, mal) => {
@@ -23,11 +24,23 @@
     document.head.appendChild(s);
   });
 
-  /** Arma un .tar (formato ustar) con los archivos { nombre: Uint8Array }. */
+  /** Arma un .tar (formato ustar) con los archivos { nombre: Uint8Array }. Primero van las carpetas (la librería las necesita). */
   function armarTar(archivos) {
     const partes = [];
     const enc = new TextEncoder();
     const octal = (n, largo) => n.toString(8).padStart(largo - 1, '0') + '\0';
+    const carpetas = new Set();
+    for (const n of Object.keys(archivos)) { const s = n.split('/'); for (let i = 1; i < s.length; i++) carpetas.add(s.slice(0, i).join('/') + '/'); }
+    for (const c of [...carpetas].sort((a, b) => a.split('/').length - b.split('/').length)) {
+      const h = new Uint8Array(512);
+      const poner = (txt, pos, largo) => { const b = enc.encode(txt); h.set(b.subarray(0, largo), pos); };
+      poner(c, 0, 100); poner(octal(0o755, 8), 100, 8); poner(octal(0, 8), 108, 8); poner(octal(0, 8), 116, 8);
+      poner(octal(0, 12), 124, 12); poner(octal(Math.floor(Date.now() / 1000), 12), 136, 12);
+      poner('        ', 148, 8); h[156] = '5'.charCodeAt(0); poner('ustar\0', 257, 6); poner('00', 263, 2);
+      let suma = 0; for (let i = 0; i < 512; i++) suma += h[i];
+      poner(octal(suma, 7) + ' ', 148, 8);
+      partes.push(h);
+    }
     for (const [nombre, datos] of Object.entries(archivos)) {
       const h = new Uint8Array(512);
       const poner = (txt, pos, largo) => { const b = enc.encode(txt); h.set(b.subarray(0, largo), pos); };
@@ -51,6 +64,26 @@
     const cache = await caches.open(CACHE);
     const guardado = await cache.match(CLAVE_CACHE);
     if (guardado) return URL.createObjectURL(await guardado.blob());
+    // Si quedó el de la versión anterior (sin carpetas), se rearma sin volver a bajar los 40 MB.
+    try {
+      const viejo = await (await caches.open(CACHE_VIEJO)).match(CLAVE_CACHE);
+      if (viejo) {
+        avisar('📦 Reparando el detector (sin volver a bajarlo)…');
+        const tar = new Uint8Array(await new Response((await viejo.blob()).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+        const dec = new TextDecoder(); const archivos = {}; let p = 0;
+        while (p + 512 <= tar.length) {
+          const h = tar.subarray(p, p + 512); if (h.every(x => x === 0)) break;
+          const nombre = dec.decode(h.subarray(0, 100)).replace(/\0[\s\S]*$/, ''), prefijo = dec.decode(h.subarray(345, 500)).replace(/\0[\s\S]*$/, '');
+          const tam = parseInt(dec.decode(h.subarray(124, 136)).replace(/\0[\s\S]*$/, '').trim() || '0', 8);
+          if (h[156] !== 53) archivos[(prefijo ? prefijo + '/' : '') + nombre] = tar.slice(p + 512, p + 512 + tam);
+          p += 512 + Math.ceil(tam / 512) * 512;
+        }
+        const gz = await new Response(armarTar(archivos).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+        await cache.put(CLAVE_CACHE, new Response(gz, { headers: { 'Content-Type': 'application/gzip' } }));
+        await caches.delete(CACHE_VIEJO);
+        return URL.createObjectURL(gz);
+      }
+    } catch (_) { /* si falla, se baja de nuevo */ }
     avisar('⬇️ Bajando el detector de voz (40 MB, una sola vez)…');
     const r = await fetch(MODELO_ZIP);
     if (!r.ok) throw new Error('No se pudo bajar el modelo (' + r.status + ')');
