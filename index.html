@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v8</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v9</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -85,6 +85,7 @@
     <p class="ayuda">En el sistema: Caja y reportes → Asistente → Morsis → Generar código.</p>
     <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
     <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
+    <div class="opcion"><input type="checkbox" id="a-sinpitidos"><label for="a-sinpitidos">Detector sin pitidos (beta): escucha «Morsis» dentro del celu, sin internet. Baja 40 MB una sola vez.</label></div>
     <div class="opcion"><input type="checkbox" id="a-voz" checked><label for="a-voz">Responder en voz alta</label></div>
     <div class="opcion"><input type="checkbox" id="a-pantalla"><label for="a-pantalla">Mantener la pantalla encendida</label></div>
     <p class="ayuda" id="a-msg"></p>
@@ -96,7 +97,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=8"></script>
+<script src="nucleo.js?v=9"></script>
+<script src="detector.js?v=9"></script>
 <script>
 (function(){
   'use strict';
@@ -110,7 +112,7 @@
     set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} }
   };
   const CLAVE_CONFIG = 'asistente.config';
-  const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false, manosLibres: true, palabra: 'Morsis', sistema: 'https://sistema.ferreteriadnjr.com.ar', codigo: '' };
+  const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false, manosLibres: true, palabra: 'Morsis', sistema: 'https://sistema.ferreteriadnjr.com.ar', codigo: '', sinPitidos: false };
   let config = Object.assign({}, porDefecto);
   try { Object.assign(config, JSON.parse(almacen.get(CLAVE_CONFIG) || '{}')); } catch (_) {}
   const guardarConfig = () => almacen.set(CLAVE_CONFIG, JSON.stringify(config));
@@ -227,7 +229,7 @@
 
   // ------------------------------------------------ micrófono (se toca, se habla, se envía solo al terminar)
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, ocupado = false;
+  let rec = null, ocupado = false, seguimiento = false;
   if (!Rec){ estado.textContent = 'Este navegador no tiene dictado por voz. Abrilo en Chrome.'; mic.disabled = true; }
 
   async function enviar(dicho){
@@ -248,6 +250,9 @@
     textoEnReposo();
     // Charla seguida: unos segundos después de responder se puede repreguntar SIN decir "Morsis"
     // ("no, el de media pulgada"). Recuerda lo anterior.
+    if (config.manosLibres && config.sinPitidos && detectorListo){
+      seguimiento = true; estado.textContent = '🎤 ¿Algo más?'; escuchar(); return;
+    }
     if (config.manosLibres){
       esperandoOrden = Date.now() + 9000;
       estado.textContent = '🎤 ¿Algo más? (podés seguir sin decir «' + config.palabra + '»)';
@@ -256,7 +261,8 @@
     iniciarFondo();
   }
   function textoEnReposo(){
-    estado.textContent = config.manosLibres ? `👂 Decí «${config.palabra}» y lo que necesites (o tocá el micrófono)` : 'Tocá el micrófono para hablar';
+    estado.textContent = !config.manosLibres ? 'Tocá el micrófono para hablar'
+      : config.sinPitidos ? `🤫 Decí «${config.palabra}», esperá el pitido y pedí` : `👂 Decí «${config.palabra}» y lo que necesites (o tocá el micrófono)`;
   }
 
   // ------------------------------------------------ MANOS LIBRES: escucha siempre y responde solo si oye la palabra
@@ -281,8 +287,39 @@
     setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 8200);
     return true;
   }
+  // ---- Detector sin pitidos (detector.js): escucha "Morsis" offline y recién ahí abre el dictado de Google.
+  let detector = null, detectorListo = false, cargandoDetector = false;
+  function alOirDetector(t, final){
+    if (ocupado || rec) return;
+    $('oido').textContent = 'Escuché: «' + t + '»';
+    if (!N.detectarActivacion(t, config.palabra).activado) return;
+    detector.pausar();
+    estado.textContent = '🎤 Te escucho… decí tu pedido';
+    escuchar();
+  }
+  async function iniciarDetector(){
+    if (!window.DetectorMorsis){ estado.textContent = 'No se cargó el detector sin pitidos.'; return; }
+    if (detectorListo){ try{ await detector.reanudar(); textoEnReposo(); }catch(e){ estado.textContent = 'No pude abrir el micrófono: ' + e.message; } return; }
+    if (cargandoDetector) return;
+    cargandoDetector = true;
+    try{
+      detector = window.DetectorMorsis.crearDetector({ alOir: alOirDetector, avisar: t => { estado.textContent = t; } });
+      await detector.iniciar();
+      detectorListo = true;
+      textoEnReposo();
+      if (ocupado || rec) detector.pausar();
+    }catch(e){
+      detector = null;
+      estado.textContent = '⚠️ El detector sin pitidos no anduvo (' + (e.message || 'error') + '). Sigo con el modo común.';
+      config.sinPitidos = false; guardarConfig();
+    }
+    cargandoDetector = false;
+    if (!config.sinPitidos) iniciarFondo();
+  }
+
   // Una frase por vez (en Android el modo "continuo" anda mal): al terminar cada frase se vuelve a escuchar.
   function iniciarFondo(){
+    if (config.sinPitidos && config.manosLibres){ if (!ocupado && !rec && document.visibilityState === 'visible') iniciarDetector(); return; }
     if (!Rec || !config.manosLibres || ocupado || rec || fondo || necesitaToque || document.visibilityState !== 'visible') return;
     const r = new Rec(); fondo = r;
     r.lang = 'es-AR'; r.continuous = false; r.interimResults = true; r.maxAlternatives = 1;
@@ -314,6 +351,7 @@
     if (necesitaToque){ necesitaToque = false; reintentos = 0; iniciarFondo(); }
   }, { passive: true });
   function detenerFondo(){
+    if (detector && detectorListo) detector.pausar();
     if (!fondo) return;
     const r = fondo; fondo = null;
     try{ r.abort(); }catch(_){}
@@ -360,7 +398,10 @@
     r.onend = () => {
       rec = null; mic.classList.remove('escuchando');
       const dicho = (final || parcial || '').trim();
-      if (dicho) enviar(dicho);
+      const cierre = seguimiento && /^(nada|no nada|gracias|listo|chau|ok|okey|esta bien|está bien|cancel\w*|basta)[.!]*$/i.test(dicho);
+      seguimiento = false;
+      if (dicho && !cierre) enviar(dicho);
+      else if (cierre){ textoEnReposo(); setTimeout(iniciarFondo, 300); }
       else { if (/Escuchando/.test(estado.textContent)) estado.textContent = 'No escuché nada. Tocá el micrófono y probá de nuevo.'; setTimeout(iniciarFondo, 1500); }
     };
     try{ r.start(); }catch(_){ rec = null; mic.classList.remove('escuchando'); }
@@ -384,7 +425,7 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
@@ -403,7 +444,7 @@
       }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
     }
     config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
-    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
+    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
     guardarConfig(); aplicarPantalla(); pintarModo(); dlg.close(); iniciarFondo();
     mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
   });
