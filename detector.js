@@ -101,7 +101,11 @@
       await cargarScript(LIB);
       const url = await prepararModelo(avisar);
       avisar('🧠 Cargando el detector…');
-      modelo = await raiz.Vosk.createModel(url);
+      // Si el modelo no carga en 3 minutos (o da error), se avisa en vez de quedarse "cargando" para siempre.
+      modelo = await Promise.race([
+        raiz.Vosk.createModel(url),
+        new Promise((_, mal) => setTimeout(() => mal(new Error('el detector tardó demasiado en cargar')), 180000))
+      ]);
       await abrirMicrofono();
       reconocedor = new modelo.KaldiRecognizer(ctx.sampleRate);
       let ultimo = '';
