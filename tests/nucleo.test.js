@@ -77,7 +77,7 @@ test('cerebro: la IA pide una herramienta, se ejecuta acá y la respuesta sale d
   const { herramientas, puestos } = armar();
   const g = geminiFalso('poner_temporizador', { minutos: 2, motivo: 'la pizza' });
   const c = N.crearCerebro({ fetchFn: g.fetchFn, getClave: () => 'CLAVE', getNombre: () => 'Mauricio', herramientas, ahora: () => new Date('2026-11-21T20:30:00Z') });
-  const r = await c.responder('poné un temporizador de dos minutos para la pizza');
+  const r = await c.responder('acordate de la pizza en un ratito');
   assert.match(r.texto, /LISTO/); assert.deepEqual(puestos, [{ s: 120, m: 'la pizza' }]);
   assert.equal(g.pedidos[0].clave, 'CLAVE');
   assert.match(g.pedidos[0].cuerpo.systemInstruction.parts[0].text, /Mauricio/);
@@ -113,7 +113,7 @@ test('cerebro: sin clave, clave mala, límite, caída y respaldo con otro modelo
   const urls = [];
   const saturado = async url => { urls.push(url); return urls.length === 1 ? { ok: false, status: 503 } : { ok: true, status: 200, json: async () => ({ candidates: [{ content: { role: 'model', parts: [{ text: 'Hola' }] } }] }) }; };
   assert.equal((await con(saturado).responder('hola')).texto, 'Hola');
-  assert.match(urls[0], /gemini-flash-latest/); assert.match(urls[1], /flash-lite/);
+  assert.match(urls[0], /flash-lite-latest/); assert.match(urls[1], /models\/gemini-flash-latest/);
 });
 
 test('conectores: un objeto nuevo en la lista queda disponible para la IA sin tocar nada más', async () => {
@@ -136,4 +136,29 @@ test('palabra de activación: acepta cómo la escribe el dictado y separa la ord
   assert.equal(d('mostrame el precio').activado, false);
   assert.equal(d('mis cosas').activado, false);
   assert.equal(d('').activado, false);
+});
+
+test('respuestas rápidas sin IA: hora, temporizador, cancelar, clima, cómo llegar; lo demás sigue a la IA', async () => {
+  const clima = { current: { temperature_2m: 22.4, weather_code: 2 }, daily: { weather_code: [61, 0], temperature_2m_max: [25.2, 28], temperature_2m_min: [17.1, 18], precipitation_probability_max: [70, 5] } };
+  const enlaces = [];
+  const puestos = [];
+  const herramientas = N.crearHerramientas({
+    ahora: () => new Date('2026-11-21T20:30:00Z'), pedirJSON: async () => clima, listas: N.crearListas({ get: () => null, set: () => {} }),
+    config: { lat: -34.58, lon: -58.63, lugar: 'Hurlingham' }, mostrarEnlace: (u, t) => enlaces.push(u),
+    temporizadores: { poner: (s, m) => puestos.push({ s, m }), cancelarTodos: () => { const n = puestos.length; puestos.length = 0; return n; } }
+  });
+  const r = t => N.respuestaRapida(t, herramientas);
+  assert.equal((await r('¿Qué hora es?')).texto, 'Son las 17:30.');
+  assert.match((await r('qué día es hoy')).texto, /sábado/);
+  assert.match((await r('poné un temporizador de diez minutos para la pizza')).texto, /10 minutos para pizza/);
+  assert.deepEqual(puestos[0], { s: 600, m: 'pizza' });
+  assert.match((await r('temporizador de media hora')).texto, /30 minutos/);
+  assert.match((await r('timer de 45 segundos')).texto, /45 segundos/);
+  assert.match((await r('cancelá los temporizadores')).texto, /cancelé/);
+  assert.match((await r('qué temperatura hace a esta hora')).texto, /Hurlingham hace 22 grados/);
+  assert.match((await r('va a llover mañana')).texto, /Mañana en Hurlingham/);
+  assert.match((await r('cómo llego a Rivadavia 5000, Morón')).texto, /Google Maps/);
+  assert.match(enlaces[0], /destination=Rivadavia%205000%2C%20Mor%C3%B3n/);
+  assert.equal(await r('contame un chiste'), null);
+  assert.equal(await r('cuánto es el 25% de 1800'), null);
 });

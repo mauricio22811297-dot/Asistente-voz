@@ -17,7 +17,7 @@
   else raiz.NucleoAsistente = fabrica();
 })(typeof self !== 'undefined' ? self : this, function () {
   const ZONA = 'America/Argentina/Buenos_Aires';
-  const MODELOS = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
+  const MODELOS = ['gemini-flash-lite-latest', 'gemini-flash-latest'];
   const MAX_VUELTAS = 4;
   const MEMORIA_TURNOS = 8;
   const MEMORIA_MS = 15 * 60 * 1000;
@@ -71,7 +71,25 @@
       estado: CLIMA_TEXTO[d.weather_code] || 'variable', minima: Math.round(d.min), maxima: Math.round(d.max), probabilidad_de_lluvia_porcentaje: d.lluvia
     });
 
+    const enlaceMaps = (destino, origen) => 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(destino)
+      + (origen ? '&origin=' + encodeURIComponent(origen) : '') + '&travelmode=driving';
     const herramientas = [
+      {
+        nombre: 'como_llegar',
+        declaracion: {
+          name: 'como_llegar', description: 'Arma el recorrido en Google Maps hasta una dirección o lugar y le muestra a la persona un botón para abrirlo. Usala para "cómo llego a…", "dónde queda…", "llevame a…".',
+          parameters: { type: 'object', properties: {
+            destino: { type: 'string', description: 'Dirección o lugar, tal como lo dijo. Ej: "Rivadavia 5000, Morón".' },
+            origen: { type: 'string', description: 'Desde dónde (opcional; si no lo dicen, desde donde esté el celular).' } }, required: ['destino'] }
+        },
+        ejecutar: async a => {
+          const destino = String((a && a.destino) || '').trim().slice(0, 150);
+          if (!destino) return { error: 'Falta a dónde.' };
+          const url = enlaceMaps(destino, String((a && a.origen) || '').trim().slice(0, 150));
+          if (contexto.mostrarEnlace) contexto.mostrarEnlace(url, 'Abrir recorrido a ' + destino);
+          return { ok: true, destino, nota: 'Ya le mostré el botón para abrir el recorrido en Google Maps.' };
+        }
+      },
       {
         nombre: 'fecha_y_hora',
         declaracion: { name: 'fecha_y_hora', description: 'Fecha y hora actuales en Argentina. Usala para saber qué hora o qué día es, o para calcular cuánto falta hasta una hora. No lleva parámetros.' },
@@ -179,6 +197,66 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
   }
 
 
+  // ---------------------------------------------------------------- respuestas rápidas (sin IA, al instante)
+  const NUMEROS = { un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11,
+    doce: 12, trece: 13, catorce: 14, quince: 15, veinte: 20, veinticinco: 25, treinta: 30, cuarenta: 40, cuarenta_y_cinco: 45, cincuenta: 50, sesenta: 60, noventa: 90 };
+  function duracionEnSegundos(t) {
+    t = ' ' + t.replace(/cuarenta y cinco/g, 'cuarenta_y_cinco') + ' ';
+    if (/\bmedia hora\b/.test(t)) return 1800;
+    if (/\b(un )?cuarto de hora\b/.test(t)) return 900;
+    const m = t.match(/\b(\d+(?:[.,]\d+)?|[a-z_]+) (segundos?|minutos?|min|horas?)\b/);
+    if (!m) return null;
+    const n = /^\d/.test(m[1]) ? Number(m[1].replace(',', '.')) : NUMEROS[m[1]];
+    if (!n) return null;
+    let seg = /^seg/.test(m[2]) ? n : /^hora/.test(m[2]) ? n * 3600 : n * 60;
+    if (/^hora/.test(m[2]) && /\by media\b/.test(t)) seg += 1800;
+    return seg;
+  }
+  const textoDuracion = seg => seg % 3600 === 0 ? `${seg / 3600} ${seg === 3600 ? 'hora' : 'horas'}`
+    : seg >= 60 && seg % 60 === 0 ? `${seg / 60} ${seg === 60 ? 'minuto' : 'minutos'}` : `${seg} segundos`;
+  /**
+   * Lo más pedido se contesta sin pasar por la IA (hora, fecha, temporizador, clima, cómo llegar): es instantáneo
+   * y no gasta consultas. Devuelve null si no es algo de esto, y ahí sigue la IA.
+   */
+  async function respuestaRapida(texto, herramientas) {
+    const t = sinTildes(texto).replace(/[¿?¡!.,]/g, ' ').replace(/\s+/g, ' ').trim();
+    const h = n => herramientas.find(x => x.nombre === n);
+    if (/^(que hora es|que hora tenes|hora|me decis la hora|decime la hora)$/.test(t)) {
+      const r = await h('fecha_y_hora').ejecutar(); return { texto: `Son las ${r.hora}.` };
+    }
+    if (/^(que dia es( hoy)?|que fecha es( hoy)?|a que dia estamos|que dia es mañana)$/.test(t.replace('manana', 'mañana'))) {
+      const r = await h('fecha_y_hora').ejecutar(); return { texto: `Hoy es ${r.fecha}.` };
+    }
+    if (/\b(temporizador|timer|alarma en|avisame en|avisame dentro de)\b/.test(t) && !/\b(cancela|cancelar|saca|sacar|borra|borrar|frena|apaga|detene)\b/.test(t)) {
+      const seg = duracionEnSegundos(t);
+      if (seg) {
+        const motivo = (t.match(/\bpara (?:el |la |los |las )?(.+)$/) || [])[1] || '';
+        await h('poner_temporizador').ejecutar({ minutos: seg / 60, motivo: motivo.slice(0, 40) });
+        return { texto: `Listo, temporizador de ${textoDuracion(seg)}${motivo ? ' para ' + motivo : ''}.` };
+      }
+    }
+    if (/\b(cancela|cancelar|saca|sacar|borra|borrar|frena|apaga|detene)\b.*\b(temporizador|temporizadores|alarma|timer)/.test(t)) {
+      const r = await h('cancelar_temporizadores').ejecutar();
+      return { texto: r.cancelados ? 'Listo, cancelé los temporizadores.' : 'No había temporizadores en marcha.' };
+    }
+    if (/\b(clima|temperatura|cuantos grados|hace frio|hace calor|va a llover|llueve|pronostico)\b/.test(t)) {
+      const ciudad = (t.match(/\ben ([a-zñ ]{3,40})$/) || [])[1];
+      const r = await h('clima').ejecutar(ciudad && !/^(este|esta|la|el)\b/.test(ciudad) ? { ciudad } : {});
+      if (r.error) return { texto: r.error };
+      const lluvia = r.hoy.probabilidad_de_lluvia_porcentaje;
+      const deManana = /\bmanana\b/.test(t);
+      if (deManana) return { texto: `Mañana en ${r.lugar}: ${r.manana.estado}, entre ${r.manana.minima} y ${r.manana.maxima} grados, con ${r.manana.probabilidad_de_lluvia_porcentaje}% de probabilidad de lluvia.` };
+      return { texto: `En ${r.lugar} hace ${r.ahora.temperatura} grados, ${r.ahora.estado}. Hoy, entre ${r.hoy.minima} y ${r.hoy.maxima}`
+        + (lluvia >= 30 ? `, con ${lluvia}% de probabilidad de lluvia.` : ', sin lluvia a la vista.') };
+    }
+    const lugar = (texto.match(/(?:c[oó]mo (?:llego|voy|ir) (?:a|al|hasta)|d[oó]nde queda|llevame (?:a|al)|ruta (?:a|al|hasta)|direcci[oó]n (?:a|al|para ir a))\s+(.+)$/i) || [])[1];
+    if (lugar) {
+      const r = await h('como_llegar').ejecutar({ destino: lugar.replace(/[?¿!.]+$/, '').trim() });
+      return { texto: r.error || 'Te dejé el botón para abrir el recorrido en Google Maps.' };
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------- palabra de activación ("Morsis")
   function distancia(a, b) {
     const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i].concat(Array(n).fill(0)));
@@ -229,6 +307,8 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     let memoria = { turnos: [], hasta: 0 };
     async function responder(texto) {
       try {
+        const rapida = await respuestaRapida(texto, herramientas).catch(() => null);
+        if (rapida) return rapida;
         const turnos = memoria.hasta > Date.now() ? memoria.turnos.slice() : [];
         const contents = turnos.map(t => ({ role: t.rol, parts: [{ text: t.texto }] }));
         const pedido = String(texto || '').slice(0, 1000);
@@ -271,5 +351,5 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     return { responder, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { crearListas, crearHerramientas, crearCerebro, detectarActivacion, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { crearListas, crearHerramientas, crearCerebro, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });

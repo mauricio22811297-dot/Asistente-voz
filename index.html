@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v4</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v5</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -90,7 +90,7 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=4"></script>
+<script src="nucleo.js?v=5"></script>
 <script>
 (function(){
   'use strict';
@@ -202,6 +202,12 @@
     temporizadores: {
       poner: nuevoTemporizador,
       cancelarTodos: () => { const n = temporizadores.length; temporizadores.forEach(t => clearTimeout(t.timeout)); temporizadores = []; guardarTemporizadores(); pintarTemporizadores(); return n; }
+    },
+    mostrarEnlace: (url, texto) => {
+      const v = $('vacio'); if (v) v.remove();
+      const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'msg ia'; a.style.fontWeight = '700'; a.textContent = '🗺️ ' + texto;
+      $('conversacion').appendChild(a); a.scrollIntoView({ block: 'nearest' });
     },
     conectores: window.CONECTORES || []   // acá se enchufa más adelante el sistema de la ferretería (ver nucleo.js)
   });
