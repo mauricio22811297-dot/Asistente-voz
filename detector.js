@@ -116,12 +116,21 @@
    */
   function crearDetector({ alOir, avisar }) {
     let modelo = null, reconocedor = null, ctx = null, stream = null, nodo = null, fuente = null, pausado = false;
+    // Cuándo llegó el último pedazo de audio y el último con algo de sonido: en Android, después de usar el
+    // dictado de Google, el micrófono puede quedar "abierto" pero mandando silencio total (queda sordo).
+    let ultimoAudio = 0, ultimoSonido = 0;
     async function abrirMicrofono() {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       fuente = ctx.createMediaStreamSource(stream);
       nodo = ctx.createScriptProcessor(4096, 1, 1);
-      nodo.onaudioprocess = e => { if (!pausado && reconocedor) { try { reconocedor.acceptWaveform(e.inputBuffer); } catch (_) {} } };
+      nodo.onaudioprocess = e => {
+        const ahora = Date.now(); ultimoAudio = ahora;
+        const d = e.inputBuffer.getChannelData(0);
+        for (let i = 0; i < d.length; i += 16) { if (d[i] > 0.0005 || d[i] < -0.0005) { ultimoSonido = ahora; break; } }
+        if (!pausado && reconocedor) { try { reconocedor.acceptWaveform(e.inputBuffer); } catch (_) {} }
+      };
+      ultimoAudio = ultimoSonido = Date.now();
       fuente.connect(nodo); nodo.connect(ctx.destination);
       // Chrome arranca el audio "dormido" si no hubo un toque en la pantalla: se intenta despertar.
       if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (_) {} }
@@ -157,13 +166,28 @@
       pausar() { pausado = true; cerrarMicrofono(); },
       async reanudar() { if (!modelo) return; if (!stream) await abrirMicrofono(); pausado = false; },
       get activo() { return !!modelo && !pausado; },
-      // true si el micrófono está abierto pero Chrome tiene el audio dormido (hace falta un toque) o se cortó.
-      get dormido() { return !!modelo && !pausado && (!ctx || ctx.state !== 'running' || !stream || !stream.getAudioTracks().some(t => t.readyState === 'live')); },
+      get pausado() { return !!modelo && pausado; },
+      // Motivo por el que quedó sordo ('' si anda bien): audio dormido, micrófono cortado, sin audio o silencio total.
+      get problema() {
+        if (!modelo || pausado) return '';
+        if (!ctx || !stream) return 'sin micrófono';
+        if (ctx.state !== 'running') return 'audio dormido';
+        const pistas = stream.getAudioTracks();
+        if (!pistas.some(t => t.readyState === 'live')) return 'micrófono cortado';
+        if (pistas.every(t => t.muted)) return 'micrófono silenciado';
+        const ahora = Date.now();
+        if (ahora - ultimoAudio > 6000) return 'no llega audio';
+        if (ahora - ultimoSonido > 20000) return 'micrófono mudo';
+        return '';
+      },
+      get dormido() { return !!this.problema; },
       async despertar() {
         if (!modelo || pausado) return;
-        if (stream && !stream.getAudioTracks().some(t => t.readyState === 'live')) cerrarMicrofono();
-        if (!stream) await abrirMicrofono();
-        if (ctx && ctx.state === 'suspended') await ctx.resume();
+        const p = this.problema;
+        if (!p) return;
+        if (p === 'audio dormido' && ctx) { try { await ctx.resume(); } catch (_) {} if (ctx.state === 'running') return; }
+        cerrarMicrofono();                 // cualquier otro caso: se suelta y se vuelve a abrir el micrófono de cero
+        await abrirMicrofono();
       },
       detener() { pausado = true; cerrarMicrofono(); try { modelo && modelo.terminate(); } catch (_) {} modelo = reconocedor = null; }
     };

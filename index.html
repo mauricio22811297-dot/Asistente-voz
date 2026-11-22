@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v18</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v19</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -101,8 +101,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=18"></script>
-<script src="detector.js?v=18"></script>
+<script src="nucleo.js?v=19"></script>
+<script src="detector.js?v=19"></script>
 <script>
 (function(){
   'use strict';
@@ -353,21 +353,34 @@
   }
   // Chrome a veces no deja arrancar el micrófono solo: con el primer toque en cualquier lado, arranca.
   document.addEventListener('pointerdown', e => {
-    if (detector && detectorListo && detector.dormido) detector.despertar().then(textoEnReposo).catch(() => {});
+    if (detector && detectorListo && !ocupado && !rec){
+      if (detector.pausado) iniciarFondo();
+      else if (detector.dormido) detector.despertar().then(textoEnReposo).catch(() => {});
+    }
     if (e.target.closest && e.target.closest('#mic, #btn-modo, dialog')) return;
     if (necesitaToque){ necesitaToque = false; reintentos = 0; iniciarFondo(); }
   }, { passive: true });
 
   // Vigilante: cada 5 segundos se fija que manos libres siga escuchando (Android corta el micrófono o duerme el
   // audio cada tanto, sobre todo si la pantalla se apaga o se cambió de app) y lo vuelve a arrancar.
+  let recDesde = 0, ocupadoDesde = 0;
   setInterval(async () => {
-    if (!config.manosLibres || ocupado || rec || document.visibilityState !== 'visible') return;
+    if (!config.manosLibres || document.visibilityState !== 'visible') return;
+    const ahora = Date.now();
+    // Si el dictado de Google quedó colgado (Android a veces no avisa que terminó), se corta y se sigue.
+    if (rec){ if (!recDesde) recDesde = ahora; else if (ahora - recDesde > 25000){ const r = rec; rec = null; recDesde = 0; mic.classList.remove('escuchando'); try{ r.abort(); }catch(_){} seguimiento = false; textoEnReposo(); } return; }
+    recDesde = 0;
+    if (ocupado){ if (!ocupadoDesde) ocupadoDesde = ahora; else if (ahora - ocupadoDesde > 100000){ ocupado = false; mic.disabled = false; textoEnReposo(); } else return; }
+    ocupadoDesde = 0;
     if (config.sinPitidos){
       if (!detectorListo){ if (!cargandoDetector) iniciarFondo(); return; }
-      if (detector.dormido){
+      if (detector.pausado){ iniciarFondo(); return; }          // quedó en pausa después de una respuesta: se reanuda
+      const p = detector.problema;
+      if (p){
         try{ await detector.despertar(); }catch(_){}
-        if (detector.dormido) estado.textContent = '👆 Tocá la pantalla una vez para que Morsis vuelva a escuchar.';
-        else textoEnReposo();
+        const p2 = detector.problema;
+        if (p2) estado.textContent = '👆 Tocá la pantalla una vez para que Morsis vuelva a escuchar (' + p2 + ').';
+        else { textoEnReposo(); $('oido').textContent = '🔄 Reabrí el micrófono (' + p + ').'; }
       }
     } else if (!fondo && !necesitaToque){
       reintentos = 0; iniciarFondo();
