@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v6</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v7</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -60,6 +60,7 @@
   <button id="mic" aria-label="Tocar para hablar">🎤</button>
   <div id="estado" role="status">Tocá el micrófono para hablar</div>
   <button id="btn-modo" class="modo">👂 Manos libres</button>
+  <div id="oido" class="ejemplos" style="min-height:18px;"></div>
   <div class="ejemplos">Decí «Morsis» y después: «cuánto sale el codo de fusión de tres cuartos», «qué hora es», «cómo está el clima», «poné un temporizador de 10 minutos», «anotá pan en la lista de compras», «contame un chiste».</div>
 
   <div class="panel" id="panel-temporizadores" hidden></div>
@@ -95,7 +96,7 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=6"></script>
+<script src="nucleo.js?v=7"></script>
 <script>
 (function(){
   'use strict';
@@ -253,40 +254,53 @@
 
   // ------------------------------------------------ MANOS LIBRES: escucha siempre y responde solo si oye la palabra
   let fondo = null, esperandoOrden = 0, reintentos = 0;
+  let necesitaToque = false;
+  function procesarFondo(t){
+    t = String(t || '').trim();
+    if (!t || ocupado) return false;
+    $('oido').textContent = 'Escuché: «' + t + '»';
+    if (esperandoOrden && Date.now() < esperandoOrden){ esperandoOrden = 0; enviar(t); return true; }
+    esperandoOrden = 0;
+    const a = N.detectarActivacion(t, config.palabra);
+    if (!a.activado) return false;
+    if (a.orden){ enviar(a.orden); return true; }
+    esperandoOrden = Date.now() + 8000;          // dijo solo "Morsis": espera la orden unos segundos
+    estado.textContent = '🎤 Te escucho…'; pitidoCorto();
+    setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 8200);
+    return true;
+  }
+  // Una frase por vez (en Android el modo "continuo" anda mal): al terminar cada frase se vuelve a escuchar.
   function iniciarFondo(){
-    if (!Rec || !config.manosLibres || ocupado || rec || fondo || document.visibilityState !== 'visible') return;
+    if (!Rec || !config.manosLibres || ocupado || rec || fondo || necesitaToque || document.visibilityState !== 'visible') return;
     const r = new Rec(); fondo = r;
-    r.lang = 'es-AR'; r.continuous = true; r.interimResults = false; r.maxAlternatives = 1;
-    r.onstart = () => { reintentos = 0; if (!esperandoOrden) textoEnReposo(); };
+    r.lang = 'es-AR'; r.continuous = false; r.interimResults = true; r.maxAlternatives = 1;
+    let ultimo = '', listo = false;
+    r.onstart = () => { if (!esperandoOrden) textoEnReposo(); };
     r.onresult = ev => {
-      for (let i = ev.resultIndex; i < ev.results.length; i++){
-        if (!ev.results[i].isFinal) continue;
-        const t = String(ev.results[i][0].transcript || '').trim();
-        if (!t || ocupado) continue;
-        if (esperandoOrden && Date.now() < esperandoOrden){ esperandoOrden = 0; enviar(t); return; }
-        esperandoOrden = 0;
-        const a = N.detectarActivacion(t, config.palabra);
-        if (!a.activado) continue;
-        if (a.orden){ enviar(a.orden); return; }
-        esperandoOrden = Date.now() + 8000;          // dijo solo "Morsis": espera la orden unos segundos
-        estado.textContent = '🎤 Te escucho…'; pitidoCorto();
-        setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 8200);
-      }
+      let t = ''; for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+      ultimo = t;
+      if (ev.results[ev.results.length - 1].isFinal && !listo){ listo = true; procesarFondo(t); }
     };
     r.onerror = ev => {
       if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed'){
-        config.manosLibres = false; guardarConfig(); pintarModo();
-        estado.textContent = 'No tengo permiso para el micrófono. Permitilo en el candado de la barra de direcciones y volvé a activar manos libres.';
-      }
+        necesitaToque = true;
+        estado.textContent = '👆 Tocá la pantalla una vez para que Morsis empiece a escuchar.';
+      } else if (ev.error !== 'no-speech' && ev.error !== 'aborted') reintentos++;
     };
     r.onend = () => {
       if (fondo !== r) return;
       fondo = null;
-      reintentos++;
-      setTimeout(iniciarFondo, reintentos > 5 ? 3000 : 250);   // Chrome corta solo cada tanto: se vuelve a arrancar
+      if (!listo && ultimo) { listo = true; if (procesarFondo(ultimo)) return; }
+      if (ocupado || necesitaToque) return;
+      setTimeout(iniciarFondo, reintentos > 5 ? 3000 : 150);
     };
     try{ r.start(); }catch(_){ fondo = null; setTimeout(iniciarFondo, 1500); }
   }
+  // Chrome a veces no deja arrancar el micrófono solo: con el primer toque en cualquier lado, arranca.
+  document.addEventListener('pointerdown', e => {
+    if (e.target.closest && e.target.closest('#mic, #btn-modo, dialog')) return;
+    if (necesitaToque){ necesitaToque = false; reintentos = 0; iniciarFondo(); }
+  }, { passive: true });
   function detenerFondo(){
     if (!fondo) return;
     const r = fondo; fondo = null;

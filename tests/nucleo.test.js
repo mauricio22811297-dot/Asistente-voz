@@ -185,3 +185,9 @@ test('ferretería: lo del negocio va directo al sistema con el código; sin vinc
   const caido = N.crearConectorFerreteria({ url: () => 'https://s', codigo: () => cod, fetchFn: async () => { throw new Error('x'); } });
   assert.match((await caido.consultar('precio')).error, /No pude conectarme/);
 });
+
+test('palabra de activación: formas comunes del dictado ("Moisés", "Norsis")', () => {
+  assert.deepEqual(N.detectarActivacion('Moisés qué hora es', 'Morsis'), { activado: true, orden: 'que hora es' });
+  assert.equal(N.detectarActivacion('norsis', 'Morsis').activado, true);
+  assert.equal(N.detectarActivacion('mostrador', 'Morsis').activado, false);
+});

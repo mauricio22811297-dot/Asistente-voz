@@ -314,7 +314,9 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     const clave = sinTildes(palabra).replace(/[^a-z0-9]/g, '');
     const palabras = sinTildes(texto).replace(/[^a-z0-9ñ\s]/g, ' ').split(/\s+/).filter(Boolean);
     const tolerancia = clave.length >= 6 ? 2 : 1;
-    const parecida = w => w.length >= 3 && (w === clave || (w[0] === clave[0] && distancia(w, clave) <= tolerancia));
+    // Cómo suele escribir el dictado "Morsis" (se suman a la tolerancia de letras).
+    const alias = clave === 'morsis' ? ['moises', 'moisés', 'morsi', 'morci', 'morcis', 'morris', 'mores', 'morfis', 'marcis', 'norsis'] : [];
+    const parecida = w => w.length >= 3 && (w === clave || alias.includes(w) || (w[0] === clave[0] && distancia(w, clave) <= tolerancia));
     for (let i = 0; i < palabras.length; i++) {
       let usadas = 0;
       if (parecida(palabras[i])) usadas = 1;
