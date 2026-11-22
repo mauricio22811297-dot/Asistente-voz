@@ -204,3 +204,27 @@ test('frase cortada por una pausa: se detecta para seguir escuchando', () => {
   assert.equal(N.quedaIncompleta('qué hora es'), false);
   assert.equal(N.quedaIncompleta(''), false);
 });
+
+test('avisos de transferencias: la primera vez no lee lo viejo; después arma la frase', async () => {
+  const urls = [];
+  let resp = { ultimo: 40, avisos: [] };
+  const fetchFn = async (u, o) => { urls.push({ u, auth: o.headers.Authorization }); return { ok: true, json: async () => resp }; };
+  const a = N.crearAvisos({ url: () => 'https://s.com/', codigo: () => 'MRS-x', fetchFn });
+  assert.deepEqual(await a.revisar(), []);
+  assert.equal(urls[0].u, 'https://s.com/api/morsis/avisos'); assert.equal(urls[0].auth, 'Bearer MRS-x');
+  resp = { ultimo: 41, avisos: [{ id: 41, monto: 15000, remitente: 'Juan García', origen: 'mercadopago' }] };
+  assert.deepEqual(await a.revisar(), ['Entró una transferencia de 15.000 pesos de Juan García por Mercado Pago.']);
+  assert.equal(urls[1].u, 'https://s.com/api/morsis/avisos?desde=40');
+  resp = { ultimo: 41, avisos: [] };
+  await a.revisar(); assert.equal(urls[2].u, 'https://s.com/api/morsis/avisos?desde=41');
+  const sin = N.crearAvisos({ url: () => '', codigo: () => '', fetchFn });
+  assert.deepEqual(await sin.revisar(), []);
+});
+
+test('lo de sumar al ticket va al sistema, con la compu elegida', async () => {
+  assert.ok(N.esDelNegocio('sumá 3 codos de tres cuartos')); assert.ok(N.esDelNegocio('agregá un teflón al ticket'));
+  const pedidos = [];
+  const c = N.crearConectorFerreteria({ url: () => 'https://s', codigo: () => 'MRS-x', compu: () => 'Compu 1', fetchFn: async (u, o) => { pedidos.push(JSON.parse(o.body)); return { ok: true, json: async () => ({ texto: 'Listo' }) }; } });
+  await c.consultar('sumá un codo');
+  assert.equal(pedidos[0].compu, 'Compu 1');
+});

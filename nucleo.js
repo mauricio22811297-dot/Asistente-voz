@@ -196,7 +196,7 @@
       try {
         r = await sistema.fetchFn(url + '/api/morsis/consulta', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + codigo },
-          body: JSON.stringify({ texto: String(pregunta || '').slice(0, 500) })
+          body: JSON.stringify({ texto: String(pregunta || '').slice(0, 500), compu: String((sistema.compu && sistema.compu()) || '').slice(0, 40) })
         });
       } catch (_) { return { error: 'No pude conectarme con el sistema de la ferretería.' }; }
       let j = {};
@@ -220,7 +220,32 @@
   /** ¿Es una pregunta del negocio? Entonces va directo al sistema (sin pasar por la IA de acá: más rápido). */
   function esDelNegocio(texto) {
     const t = sinTildes(texto);
-    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes)\b/.test(t);
+    return /\b(precio|precios|cuanto (sale|cuesta|esta|vale)|cuanto debe|que debe|deuda|saldo|stock|hay (de|stock)|queda(n)? de|tenemos|vendimos|vendi|ventas|caja de hoy|proveedor|pedido|pedidos|cliente|clientes|suma|sumame|sumale|agrega|agregame|agregale|carga|cargame|cargale|ticket)\b/.test(t);
+  }
+
+  /**
+   * AVISOS de transferencias: cada tanto le pregunta al sistema si entró alguna (las manda el celular con MacroDroid)
+   * y las devuelve armadas como frase. La primera vez solo toma el número del último aviso, para no leer lo viejo.
+   */
+  function crearAvisos(sistema) {
+    let ultimo = null;
+    const pesos = n => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+    const ORIGEN = { mercadopago: 'Mercado Pago', 'mercado pago': 'Mercado Pago', naranjax: 'Naranja X', 'naranja x': 'Naranja X' };
+    function frase(a) {
+      const origen = a.origen ? (ORIGEN[String(a.origen).toLowerCase()] || a.origen) : '';
+      return 'Entró una transferencia' + (a.monto != null ? ` de ${pesos(a.monto)} pesos` : '') + (a.remitente ? ` de ${a.remitente}` : '') + (origen ? ` por ${origen}` : '') + '.';
+    }
+    async function revisar() {
+      const url = String(sistema.url() || '').trim().replace(/\/+$/, ''), codigo = String(sistema.codigo() || '').trim();
+      if (!url || !codigo) return [];
+      const r = await sistema.fetchFn(url + '/api/morsis/avisos' + (ultimo == null ? '' : '?desde=' + ultimo), { headers: { Authorization: 'Bearer ' + codigo } });
+      if (!r.ok) return [];
+      const j = await r.json();
+      const primera = ultimo == null;
+      if (Number.isFinite(Number(j.ultimo))) ultimo = Number(j.ultimo);
+      return primera ? [] : (j.avisos || []).map(frase);
+    }
+    return { revisar, frase };
   }
 
   function instrucciones({ nombre, ahora }) {
@@ -408,5 +433,5 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     return { responder, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });
