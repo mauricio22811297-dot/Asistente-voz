@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v11</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v12</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -85,6 +85,7 @@
     <p class="ayuda">En el sistema: Caja y reportes → Asistente → Morsis → Generar código.</p>
     <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
     <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
+    <p class="ayuda" id="a-errordetector" style="color:#ff8a8a;"></p>
     <div class="opcion"><input type="checkbox" id="a-sinpitidos"><label for="a-sinpitidos">Detector sin pitidos (beta): escucha «Morsis» dentro del celu, sin internet. Baja 40 MB una sola vez.</label></div>
     <div class="opcion"><input type="checkbox" id="a-voz" checked><label for="a-voz">Responder en voz alta</label></div>
     <div class="opcion"><input type="checkbox" id="a-pantalla"><label for="a-pantalla">Mantener la pantalla encendida</label></div>
@@ -97,8 +98,8 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=11"></script>
-<script src="detector.js?v=11"></script>
+<script src="nucleo.js?v=12"></script>
+<script src="detector.js?v=12"></script>
 <script>
 (function(){
   'use strict';
@@ -303,15 +304,17 @@
     if (cargandoDetector) return;
     cargandoDetector = true;
     try{
-      detector = window.DetectorMorsis.crearDetector({ alOir: alOirDetector, avisar: t => { estado.textContent = t; } });
+      detector = window.DetectorMorsis.crearDetector({ alOir: alOirDetector, avisar: t => { estado.textContent = t; $('oido').textContent = t; } });
       await detector.iniciar();
-      detectorListo = true;
+      detectorListo = true; config.errorDetector = ''; guardarConfig();
       textoEnReposo();
       if (ocupado || rec) detector.pausar();
     }catch(e){
       detector = null;
-      estado.textContent = '⚠️ El detector sin pitidos no anduvo (' + (e.message || 'error') + '). Sigo con el modo común.';
+      // Queda anotado y a la vista (debajo del micrófono y en Ajustes), para poder ver el motivo después.
+      config.errorDetector = new Date().toLocaleString('es-AR') + ': ' + (e.message || String(e) || 'error');
       config.sinPitidos = false; guardarConfig();
+      $('oido').textContent = '⚠️ El detector sin pitidos no anduvo (' + (e.message || 'error') + '). Sigo con el modo común.';
     }
     cargandoDetector = false;
     if (!config.sinPitidos) iniciarFondo();
@@ -425,7 +428,7 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
