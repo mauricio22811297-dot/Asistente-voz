@@ -40,11 +40,12 @@ class VozPropiaTest {
     private val hola = listOf(450.0 to 800.0, 750.0 to 1300.0)
 
     private fun huella(a: ShortArray) = VozPropia.mfcc(VozPropia.recortar(a))
+    private fun oido(a: ShortArray) = VozPropia.mfcc(VozPropia.recortar(a), restarMedia = false)
 
     @Test fun laMismaPalabraSeParecePorEncimaDeOtra() {
         val muestras = listOf(palabra(morsis), palabra(morsis, 0.9), palabra(morsis, 1.1, 0.8), palabra(morsis, 1.0, 1.2, 300.0), palabra(morsis, 0.95)).map { huella(it) }
         val umbral = VozPropia.umbral(muestras, "media")
-        val mejor = { a: ShortArray -> val h = huella(a); muestras.minOf { VozPropia.dtw(it, h, prefijo = true) } }
+        val mejor = { a: ShortArray -> val h = oido(a); muestras.minOf { VozPropia.dtw(it, h, prefijo = true) } }
         val propia = mejor(palabra(morsis, 1.05, 0.7, 400.0))
         val otra = mejor(palabra(tornillo))
         val corta = mejor(palabra(hola))
@@ -59,7 +60,7 @@ class VozPropiaTest {
         val muestras = listOf(palabra(morsis), palabra(morsis, 0.9), palabra(morsis, 1.1)).map { huella(it) }
         val umbral = VozPropia.umbral(muestras, "media")
         val seguido = palabra(morsis + hola + tornillo)   // "Morsis, hola tornillo…" sin pausa
-        val h = huella(seguido)
+        val h = oido(seguido)
         val d = muestras.minOf { VozPropia.dtw(it, h, prefijo = true) }
         println("prefijo: umbral=$umbral seguido=$d")
         assertTrue("prefijo", d <= umbral)

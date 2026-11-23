@@ -77,7 +77,7 @@ object VozPropia {
     }
 
     /** Huella MFCC (cuadros × 13), con la media restada (así no importa tanto el volumen ni el micrófono). */
-    fun mfcc(audio: ShortArray): Array<DoubleArray> {
+    fun mfcc(audio: ShortArray, restarMedia: Boolean = true): Array<DoubleArray> {
         if (audio.size < VENTANA) return emptyArray()
         val cuadros = 1 + (audio.size - VENTANA) / PASO
         val salida = Array(cuadros) { DoubleArray(COEF) }
@@ -105,13 +105,18 @@ object VozPropia {
                 salida[c][k] = s
             }
         }
-        for (k in 0 until COEF) {
-            var media = 0.0
-            for (c in 0 until cuadros) media += salida[c][k]
-            media /= cuadros
-            for (c in 0 until cuadros) salida[c][k] -= media
-        }
+        if (restarMedia) restarMedia(salida, cuadros)
         return salida
+    }
+
+    private fun restarMedia(h: Array<DoubleArray>, cuadros: Int) {
+        if (cuadros <= 0) return
+        for (k in 0 until h[0].size) {
+            var media = 0.0
+            for (c in 0 until cuadros) media += h[c][k]
+            media /= cuadros
+            for (c in 0 until cuadros) h[c][k] -= media
+        }
     }
 
     private fun dist(a: DoubleArray, b: DoubleArray): Double {
@@ -127,8 +132,22 @@ object VozPropia {
     fun dtw(muestra: Array<DoubleArray>, oido: Array<DoubleArray>, prefijo: Boolean): Double {
         val n = muestra.size
         if (n == 0 || oido.isEmpty()) return Double.MAX_VALUE
-        val m = if (prefijo) min(oido.size, (n * 1.7).toInt()) else oido.size
-        if (m < n * 0.5) return Double.MAX_VALUE
+        val m0 = if (prefijo) min(oido.size, (n * 1.7).toInt()) else oido.size
+        if (m0 < n * 0.5) return Double.MAX_VALUE
+        // Con prefijo, lo oído viene SIN la media restada (puede seguir con otras palabras): se resta la media
+        // solo del tramo que se compara, del largo de la muestra, para que lo que viene después no la corra.
+        val oido = if (prefijo) {
+            val tramo = min(oido.size, n)
+            val copia = Array(m0) { oido[it].copyOf() }
+            for (k in 0 until copia[0].size) {
+                var media = 0.0
+                for (c in 0 until tramo) media += oido[c][k]
+                media /= tramo
+                for (c in 0 until m0) copia[c][k] -= media
+            }
+            copia
+        } else oido
+        val m = m0
         val inf = Double.MAX_VALUE / 4
         var ant = DoubleArray(m + 1) { inf }; ant[0] = 0.0
         var act = DoubleArray(m + 1)

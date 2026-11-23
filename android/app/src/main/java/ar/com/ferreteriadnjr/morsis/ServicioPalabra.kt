@@ -145,7 +145,7 @@ class ServicioPalabra : Service(), RecognitionListener {
             return
         }
         if (!usarVozPropia() || seg < 0.25) return
-        val huella = VozPropia.mfcc(limpio)
+        val huella = VozPropia.mfcc(limpio, restarMedia = false)
         var mejor = Double.MAX_VALUE
         for (m in muestras) mejor = minOf(mejor, VozPropia.dtw(m, huella, prefijo = true))
         val parecido = if (mejor == Double.MAX_VALUE) 0 else Math.round(umbralVoz / mejor * 100).toInt()
