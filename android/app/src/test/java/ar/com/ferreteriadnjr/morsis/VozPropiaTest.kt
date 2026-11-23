@@ -48,7 +48,7 @@ class VozPropiaTest {
         val propia = mejor(palabra(morsis, 1.05, 0.7, 400.0))
         val otra = mejor(palabra(tornillo))
         val corta = mejor(palabra(hola))
-        println("umbral=$umbral propia=$propia otra=$otra corta=$corta")
+        println("umbral=$umbral propia=$propia otra=$otra corta=$corta baja=" + VozPropia.umbral(muestras, "baja"))
         assertTrue("la misma palabra activa", propia <= umbral)
         assertTrue("otra palabra no activa", otra > umbral)
         assertTrue("una palabra corta no activa", corta > umbral)
@@ -60,7 +60,9 @@ class VozPropiaTest {
         val umbral = VozPropia.umbral(muestras, "media")
         val seguido = palabra(morsis + hola + tornillo)   // "Morsis, hola tornillo…" sin pausa
         val h = huella(seguido)
-        assertTrue("prefijo", muestras.minOf { VozPropia.dtw(it, h, prefijo = true) } <= umbral)
+        val d = muestras.minOf { VozPropia.dtw(it, h, prefijo = true) }
+        println("prefijo: umbral=$umbral seguido=$d")
+        assertTrue("prefijo", d <= umbral)
     }
 
     @Test fun recortaElSilencio() {

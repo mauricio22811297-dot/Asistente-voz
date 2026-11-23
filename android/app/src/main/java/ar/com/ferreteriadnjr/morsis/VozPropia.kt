@@ -150,7 +150,7 @@ object VozPropia {
         if (muestras.size < 2) return 0.0
         var suma = 0.0; var n = 0
         for (i in muestras.indices) for (j in i + 1 until muestras.size) { suma += dtw(muestras[i], muestras[j], false); n++ }
-        val factor = when (sensibilidad) { "alta" -> 1.5; "baja" -> 1.12; else -> 1.3 }
+        val factor = when (sensibilidad) { "alta" -> 2.6; "baja" -> 1.8; else -> 2.2 }
         return suma / n * factor
     }
 
