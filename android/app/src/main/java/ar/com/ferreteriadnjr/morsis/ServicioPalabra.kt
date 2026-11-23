@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import org.json.JSONArray
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -58,6 +59,7 @@ class ServicioPalabra : Service(), RecognitionListener {
     private var estadoTexto = "Preparando…"
     private var ultimoParcial = ""
     private var ultimoDespertar = 0L
+    private var frases: List<String> = emptyList()   // modo estricto: solo estas frases (vacío = modo aproximado)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -88,7 +90,8 @@ class ServicioPalabra : Service(), RecognitionListener {
         super.onDestroy()
     }
 
-    fun recargarPalabra() { main.post { palabra = Palabra.leer(this) } }
+    /** Cambió la palabra o la sensibilidad: se rearma el reconocedor con la gramática nueva. */
+    fun recargarPalabra() { main.post { palabra = Palabra.leer(this); detenerEscucha(); aplicar() } }
 
     /** Dictado o voz en curso (true) o terminado (false): mientras tanto se suelta el micrófono. */
     fun enUso(si: Boolean) {
@@ -172,7 +175,8 @@ class ServicioPalabra : Service(), RecognitionListener {
             modelo == null -> {}
             !permiso() -> avisar("Falta el permiso del micrófono: abrí Morsis.")
             pausadoPorUsuario -> avisar("En pausa. Tocá «Seguir» para que vuelva a escuchar.")
-            debe && escucha != null -> avisar("Escuchando «" + palabraVisible() + "»")
+            debe && escucha != null -> avisar(if (frases.isNotEmpty()) "Escuchando «" + palabraVisible() + "» (modo estricto)"
+                else "Escuchando «" + palabraVisible() + "» (modo aproximado: el detector no conoce esa palabra, elegí otra en Ajustes)")
         }
         if (ahora < pausaHasta) main.postDelayed({ aplicar() }, pausaHasta - ahora + 50)
     }
@@ -183,7 +187,12 @@ class ServicioPalabra : Service(), RecognitionListener {
         if (escucha != null) return
         val m = modelo ?: return
         try {
-            val r = Recognizer(m, 16000.0f)
+            // Modo estricto: el detector solo puede "oír" la palabra elegida (o "[unk]" para todo lo demás).
+            // Así casi no se equivoca con otras palabras y la reconoce mejor. Si la palabra no está en su
+            // diccionario, se usa el modo aproximado (escucha todo y compara).
+            frases = palabra.frasesEstrictas { w -> try { m.findWord(w) >= 0 } catch (_: Throwable) { false } }
+            val r = if (frases.isNotEmpty()) Recognizer(m, 16000.0f, JSONArray(frases + "[unk]").toString()) else Recognizer(m, 16000.0f)
+            r.setWords(true)
             val s = SpeechService(r, 16000.0f)
             s.startListening(this)
             reconocedor = r; escucha = s
@@ -209,14 +218,34 @@ class ServicioPalabra : Service(), RecognitionListener {
         if (t.isEmpty() || t == ultimoParcial) return
         ultimoParcial = t
         oido(t, false)
-        if (palabra.detecta(t)) despertar()
+        // En modo estricto se espera el resultado final (trae la confianza); en el aproximado, se reacciona ya.
+        if (frases.isEmpty() && palabra.detecta(t)) despertar()
     }
 
     override fun onResult(hypothesis: String?) {
         val t = texto(hypothesis, "text"); ultimoParcial = ""
-        if (t.isEmpty()) return
+        if (t.isEmpty() || t == "[unk]") return
         oido(t, true)
-        if (palabra.detecta(t)) despertar()
+        if (frases.isEmpty()) { if (palabra.detecta(t)) despertar(); return }
+        if (!palabra.esFrase(t, frases)) return
+        // Confianza de las palabras de la frase: si es baja, era otra cosa parecida.
+        val conf = confianza(hypothesis)
+        if (conf < 0 || conf >= palabra.confianzaMinima) despertar()
+        else oido("$t (no estoy seguro: " + Math.round(conf * 100) + "%)", false)
+    }
+
+    /** Confianza promedio de las palabras que no son "[unk]" (-1 si no viene). */
+    private fun confianza(json: String?): Double {
+        return try {
+            val a = JSONObject(json ?: "{}").optJSONArray("result") ?: return -1.0
+            var suma = 0.0; var n = 0
+            for (i in 0 until a.length()) {
+                val w = a.getJSONObject(i)
+                if (w.optString("word") == "[unk]") continue
+                suma += w.optDouble("conf", 1.0); n++
+            }
+            if (n == 0) -1.0 else suma / n
+        } catch (_: Exception) { -1.0 }
     }
 
     override fun onFinalResult(hypothesis: String?) { onResult(hypothesis) }

@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v31</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v32</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -94,6 +94,13 @@
     <div class="opcion"><input type="checkbox" id="a-avisos" checked><label for="a-avisos">Avisar en voz alta las transferencias que entran</label></div>
     <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
     <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
+    <p class="ayuda">En la app conviene una palabra que el detector conozca, como <b>Moisés</b>: la reconoce mucho mejor y casi no se confunde. Arriba, en el aviso de Morsis, dice si la conoce («modo estricto»).</p>
+    <label class="campo" for="a-sensibilidad">Sensibilidad (app)</label>
+    <select id="a-sensibilidad">
+      <option value="alta">Alta: se activa más fácil (puede activarse sin querer)</option>
+      <option value="media" selected>Media</option>
+      <option value="baja">Baja: hay que decirla clarito (casi nunca se activa sin querer)</option>
+    </select>
     <p class="ayuda" id="a-errordetector" style="color:#ff8a8a;"></p>
     <button type="button" id="a-ensenar" class="secundario" style="margin:6px 0;">🎓 Enseñarle cómo digo «Morsis»</button>
     <p class="ayuda" id="a-aprendidas"></p>
@@ -117,9 +124,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=31"></script>
-<script src="nucleo.js?v=31"></script>
-<script src="detector.js?v=31"></script>
+<script src="nativo.js?v=32"></script>
+<script src="nucleo.js?v=32"></script>
+<script src="detector.js?v=32"></script>
 <script>
 (function(){
   'use strict';
@@ -140,7 +147,7 @@
   const guardarConfig = () => {
     almacen.set(CLAVE_CONFIG, JSON.stringify(config));
     // La app escucha «Morsis» por su cuenta (con la pantalla apagada): se le pasa la palabra y lo aprendido.
-    if (NATIVO){ try{ MorsisNativo.configurar(JSON.stringify({ palabra: config.palabra || 'Morsis', aprendidas: config.aprendidas || [] })); }catch(_){} }
+    if (NATIVO){ try{ MorsisNativo.configurar(JSON.stringify({ palabra: config.palabra || 'Morsis', aprendidas: config.aprendidas || [], sensibilidad: config.sensibilidad || 'media' })); }catch(_){} }
   };
 
   // ------------------------------------------------ conversación en pantalla
@@ -583,12 +590,12 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-cuotas').value = config.cuotas || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sensibilidad').value = config.sensibilidad || 'media'; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-cuotas').value = config.cuotas || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); $('a-voz').checked = !!config.voz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
   // Pasar los ajustes de un aparato a otro (por ejemplo, de Chrome a la app de Android) copiando y pegando.
-  const AJUSTES_QUE_PASAN = ['clave', 'nombre', 'lugar', 'lat', 'lon', 'sistema', 'codigo', 'compu', 'tomtom', 'cuotas', 'palabra', 'aprendidas', 'avisos', 'voz', 'pantalla', 'manosLibres'];
+  const AJUSTES_QUE_PASAN = ['clave', 'nombre', 'lugar', 'lat', 'lon', 'sistema', 'codigo', 'compu', 'tomtom', 'cuotas', 'palabra', 'aprendidas', 'avisos', 'voz', 'pantalla', 'manosLibres', 'sensibilidad'];
   $('a-copiarajustes').addEventListener('click', async () => {
     const datos = {}; AJUSTES_QUE_PASAN.forEach(k => { if (config[k] !== undefined) datos[k] = config[k]; });
     const texto = 'MORSIS:' + btoa(unescape(encodeURIComponent(JSON.stringify(datos))));
@@ -624,7 +631,7 @@
       }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
     }
     config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
-    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.tomtom = $('a-tomtom').value.trim(); config.cuotas = $('a-cuotas').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
+    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sensibilidad = $('a-sensibilidad').value; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.tomtom = $('a-tomtom').value.trim(); config.cuotas = $('a-cuotas').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.pantalla = $('a-pantalla').checked;
     guardarConfig(); aplicarPantalla(); pintarModo(); dlg.close(); iniciarFondo();
     mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
   });
