@@ -181,6 +181,20 @@ class ServicioPalabra : Service(), RecognitionListener {
         if (ahora < pausaHasta) main.postDelayed({ aplicar() }, pausaHasta - ahora + 50)
     }
 
+    /** Palabras que conoce el detector (graph/words.txt del modelo). null si no se puede leer: modo aproximado. */
+    private var vocabularioCache: Set<String>? = null
+    private fun vocabulario(): Set<String>? {
+        vocabularioCache?.let { return it }
+        return try {
+            val f = File(File(filesDir, "modelo-es"), "graph/words.txt")
+            if (!f.exists()) return null
+            val set = HashSet<String>(60000)
+            f.forEachLine { linea -> val w = linea.substringBefore(' ').trim(); if (w.isNotEmpty()) set.add(w) }
+            vocabularioCache = set
+            set
+        } catch (_: Exception) { null }
+    }
+
     private fun palabraVisible() = getSharedPreferences("morsis", MODE_PRIVATE).getString("palabra", "Morsis") ?: "Morsis"
 
     private fun iniciarEscucha() {
@@ -190,7 +204,8 @@ class ServicioPalabra : Service(), RecognitionListener {
             // Modo estricto: el detector solo puede "oír" la palabra elegida (o "[unk]" para todo lo demás).
             // Así casi no se equivoca con otras palabras y la reconoce mejor. Si la palabra no está en su
             // diccionario, se usa el modo aproximado (escucha todo y compara).
-            frases = palabra.frasesEstrictas { w -> try { m.findWord(w) >= 0 } catch (_: Throwable) { false } }
+            val voc = vocabulario()
+            frases = if (voc == null) emptyList() else palabra.frasesEstrictas { w -> voc.contains(w) }
             val r = if (frases.isNotEmpty()) Recognizer(m, 16000.0f, JSONArray(frases + "[unk]").toString()) else Recognizer(m, 16000.0f)
             r.setWords(true)
             val s = SpeechService(r, 16000.0f)
