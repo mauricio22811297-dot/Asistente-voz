@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v30</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v31</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -117,9 +117,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=30"></script>
-<script src="nucleo.js?v=30"></script>
-<script src="detector.js?v=30"></script>
+<script src="nativo.js?v=31"></script>
+<script src="nucleo.js?v=31"></script>
+<script src="detector.js?v=31"></script>
 <script>
 (function(){
   'use strict';
@@ -531,6 +531,26 @@
   aplicarPantalla();
   pintarModo();
   if (config.clave) iniciarFondo();
+
+  // ------------------------------------------------ actualización sola
+  // La app (y el acceso directo) casi nunca se cierran: cada tanto se fija si hay una versión nueva publicada y,
+  // si Morsis no está en medio de algo, recarga la página.
+  const VERSION_ACTUAL = (document.querySelector('h1 small').textContent.match(/v\d+/) || [''])[0];
+  async function buscarVersionNueva(){
+    try{
+      const t = await fetch('index.html?v=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '');
+      const nueva = (t.match(/font-weight:400;">(v\d+)</) || [])[1];
+      if (!nueva || !VERSION_ACTUAL || nueva === VERSION_ACTUAL || ocupado || rec || (dlg && dlg.open)) return;
+      // Una sola vez por versión cada 10 minutos (por si la página nueva todavía no llegó a todos lados).
+      let previo = {}; try{ previo = JSON.parse(sessionStorage.getItem('morsis.recarga') || '{}'); }catch(_){}
+      if (previo.v === nueva && Date.now() - previo.t < 10 * 60 * 1000) return;
+      try{ sessionStorage.setItem('morsis.recarga', JSON.stringify({ v: nueva, t: Date.now() })); }catch(_){}
+      location.reload();
+    }catch(_){}
+  }
+  setInterval(buscarVersionNueva, 20 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') buscarVersionNueva(); });
+  setTimeout(buscarVersionNueva, 5000);
 
   // ------------------------------------------------ dentro de la app de Android
   if (NATIVO){
