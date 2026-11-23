@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v28</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v29</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -110,8 +110,9 @@
   </form>
 </dialog>
 
-<script src="nucleo.js?v=28"></script>
-<script src="detector.js?v=28"></script>
+<script src="nativo.js?v=29"></script>
+<script src="nucleo.js?v=29"></script>
+<script src="detector.js?v=29"></script>
 <script>
 (function(){
   'use strict';
@@ -128,7 +129,12 @@
   const porDefecto = { clave: '', nombre: '', lugar: 'Hurlingham', lat: -34.5886, lon: -58.6381, voz: true, pantalla: false, manosLibres: true, palabra: 'Morsis', sistema: 'https://sistema.ferreteriadnjr.com.ar', codigo: '', sinPitidos: false, compu: '', avisos: true };
   let config = Object.assign({}, porDefecto);
   try { Object.assign(config, JSON.parse(almacen.get(CLAVE_CONFIG) || '{}')); } catch (_) {}
-  const guardarConfig = () => almacen.set(CLAVE_CONFIG, JSON.stringify(config));
+  const NATIVO = !!window.MorsisNativo;   // dentro de la app de Android (ver nativo.js)
+  const guardarConfig = () => {
+    almacen.set(CLAVE_CONFIG, JSON.stringify(config));
+    // La app escucha «Morsis» por su cuenta (con la pantalla apagada): se le pasa la palabra y lo aprendido.
+    if (NATIVO){ try{ MorsisNativo.configurar(JSON.stringify({ palabra: config.palabra || 'Morsis', aprendidas: config.aprendidas || [] })); }catch(_){} }
+  };
 
   // ------------------------------------------------ conversación en pantalla
   function mensaje(clase, texto){
@@ -273,7 +279,7 @@
     textoEnReposo();
     // Charla seguida: unos segundos después de responder se puede repreguntar SIN decir "Morsis"
     // ("no, el de media pulgada"). Recuerda lo anterior.
-    if (config.manosLibres && config.sinPitidos && detectorListo){
+    if (config.manosLibres && (NATIVO || (config.sinPitidos && detectorListo))){
       seguimiento = true; estado.textContent = '🎤 ¿Algo más?'; escuchar(); return;
     }
     if (config.manosLibres){
@@ -284,6 +290,7 @@
     iniciarFondo();
   }
   function textoEnReposo(){
+    if (NATIVO && config.manosLibres){ estado.textContent = `🎙️ Decí «${config.palabra}» y pedí (anda con la pantalla apagada)`; return; }
     estado.textContent = !config.manosLibres ? 'Tocá el micrófono para hablar'
       : config.sinPitidos ? `🤫 Decí «${config.palabra}», esperá el pitido y pedí` : `👂 Decí «${config.palabra}» y lo que necesites (o tocá el micrófono)`;
   }
@@ -344,7 +351,7 @@
     setTimeout(() => escuchar(), 350);
   }
   function ensenarPalabra(){
-    if (!config.sinPitidos || !detectorListo){ estado.textContent = 'Primero activá «Detector sin pitidos» en Ajustes y esperá que cargue.'; return; }
+    if (!NATIVO && (!config.sinPitidos || !detectorListo)){ estado.textContent = 'Primero activá «Detector sin pitidos» en Ajustes y esperá que cargue.'; return; }
     ensenando = 3;
     estado.textContent = `🎓 Decí «${config.palabra}» 3 veces, con una pausa entre cada una`;
   }
@@ -372,6 +379,7 @@
 
   // Una frase por vez (en Android el modo "continuo" anda mal): al terminar cada frase se vuelve a escuchar.
   function iniciarFondo(){
+    if (NATIVO){ if (config.manosLibres) MorsisNativo.escucharPalabra(true); return; }   // la app escucha «Morsis» sola
     if (config.sinPitidos && config.manosLibres){ if (!ocupado && !rec && document.visibilityState === 'visible') iniciarDetector(); return; }
     if (!Rec || !config.manosLibres || ocupado || rec || fondo || necesitaToque || document.visibilityState !== 'visible') return;
     const r = new Rec(); fondo = r;
@@ -412,7 +420,7 @@
   // audio cada tanto, sobre todo si la pantalla se apaga o se cambió de app) y lo vuelve a arrancar.
   let recDesde = 0, ocupadoDesde = 0;
   setInterval(async () => {
-    if (!config.manosLibres || document.visibilityState !== 'visible') return;
+    if (NATIVO || !config.manosLibres || document.visibilityState !== 'visible') return;
     const ahora = Date.now();
     // Si el dictado de Google quedó colgado (Android a veces no avisa que terminó), se corta y se sigue.
     if (rec){ if (!recDesde) recDesde = ahora; else if (ahora - recDesde > 25000){ const r = rec; rec = null; recDesde = 0; mic.classList.remove('escuchando'); try{ r.abort(); }catch(_){} seguimiento = false; textoEnReposo(); } return; }
@@ -434,6 +442,7 @@
     }
   }, 5000);
   function detenerFondo(){
+    if (NATIVO) return;   // la app suelta el micrófono sola mientras dicta o habla
     if (detector && detectorListo) detector.pausar();
     if (!fondo) return;
     const r = fondo; fondo = null;
@@ -455,6 +464,7 @@
   }
   $('btn-modo').addEventListener('click', () => {
     config.manosLibres = !config.manosLibres; guardarConfig(); pintarModo();
+    if (NATIVO && !config.manosLibres) MorsisNativo.escucharPalabra(false);
     if (config.manosLibres){ aplicarPantalla(); iniciarFondo(); } else { detenerFondo(); aplicarPantalla(); }
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') iniciarFondo(); else detenerFondo(); });
@@ -494,7 +504,7 @@
   }
   mic.addEventListener('click', () => {
     // Si el detector oyó algo cortito justo antes de que tocaras, seguro era tu «Morsis» que no reconoció: lo aprende.
-    if (config.sinPitidos && !ensenando && ultimoFinal.t && Date.now() - ultimoFinal.cuando < 6000 && !esAprendida(ultimoFinal.t)
+    if ((config.sinPitidos || NATIVO) && !ensenando && ultimoFinal.t && Date.now() - ultimoFinal.cuando < 6000 && !esAprendida(ultimoFinal.t)
       && !N.detectarActivacion(ultimoFinal.t, config.palabra).activado && aprenderPalabra(ultimoFinal.t))
       $('oido').textContent = '🎓 Aprendí que «' + ultimoFinal.t + '» es «' + config.palabra + '».';
     ultimoFinal = { t: '', cuando: 0 };
@@ -504,6 +514,7 @@
   // ------------------------------------------------ pantalla encendida
   let wakeLock = null;
   async function aplicarPantalla(){
+    if (NATIVO){ MorsisNativo.pantallaEncendida(!!config.pantalla); return; }   // en la app no hace falta para escuchar
     try{
       if (config.pantalla || config.manosLibres){ if ('wakeLock' in navigator && !wakeLock){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } }
       else if (wakeLock){ await wakeLock.release(); wakeLock = null; }
@@ -513,6 +524,33 @@
   aplicarPantalla();
   pintarModo();
   if (config.clave) iniciarFondo();
+
+  // ------------------------------------------------ dentro de la app de Android
+  if (NATIVO){
+    window.__morsisApp = ev => {
+      if (ev.tipo === 'despertar'){
+        // La app oyó «Morsis» (aunque la pantalla estuviera apagada): se toma el pedido.
+        if (ocupado || rec) return;
+        estado.textContent = '🎤 Te escucho… decí tu pedido';
+        pitidoCorto();
+        setTimeout(() => escuchar(), 150);
+      } else if (ev.tipo === 'oido'){
+        if (ocupado || rec) return;
+        if (ev.final){ oidos.unshift(ev.texto); oidos.length = Math.min(oidos.length, 3); ultimoFinal = { t: ev.texto, cuando: Date.now() }; }
+        $('oido').textContent = 'Escuché: «' + ev.texto + '»' + (oidos.length ? '  · antes: ' + oidos.map(x => '«' + x + '»').join(' ') : '');
+        if (ensenando && ev.final){
+          if (aprenderPalabra(ev.texto)) ensenando--;
+          estado.textContent = ensenando ? `🎓 Bien («${ev.texto}»). Decí «${config.palabra}» otra vez (faltan ${ensenando})` : '✅ Listo, aprendí cómo lo decís. Probá: «' + config.palabra + '»';
+          if (!ensenando) setTimeout(textoEnReposo, 4000);
+        }
+      } else if (ev.tipo === 'estado'){
+        if (!ocupado && !rec && !ensenando) $('oido').textContent = '🎙️ ' + ev.texto;
+      }
+    };
+    try{ document.querySelector('h1 small').textContent += ' · app ' + MorsisNativo.version(); }catch(_){}
+    guardarConfig();            // le pasa a la app la palabra y lo aprendido
+    MorsisNativo.listo();       // ya puede mandar los avisos que tenía guardados (ej. "despertar")
+  }
 
   // ------------------------------------------------ ajustes
   const dlg = $('dlg-ajustes');

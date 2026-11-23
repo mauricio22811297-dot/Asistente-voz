@@ -1,0 +1,46 @@
+name: App Android de Morsis
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/app-android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Clave de firma (siempre la misma, para poder actualizar sin desinstalar)
+        env:
+          CLAVE_B64: ${{ secrets.MORSIS_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$CLAVE_B64" ]; then
+            echo "$CLAVE_B64" | base64 -d > "$RUNNER_TEMP/morsis.jks"
+            echo "MORSIS_KEYSTORE=$RUNNER_TEMP/morsis.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Sin clave fija: se firma con una de prueba (para actualizar habrá que desinstalar)."
+          fi
+      - name: Compilar
+        env:
+          MORSIS_KEYSTORE_PASS: ${{ secrets.MORSIS_KEYSTORE_PASS }}
+        run: gradle -p android assembleRelease --no-daemon --stacktrace
+      - name: Publicar el instalador (link fijo)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk morsis.apk
+          gh release delete app --cleanup-tag -y || true
+          gh release create app morsis.apk --title "Morsis para Android (versión 1.${{ github.run_number }})" \
+            --notes "Instalador de Morsis. Bajalo desde el celu y abrilo para instalar o actualizar." --latest
