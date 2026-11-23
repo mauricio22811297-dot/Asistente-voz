@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v29</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v30</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -102,6 +102,13 @@
     <div class="opcion"><input type="checkbox" id="a-voz" checked><label for="a-voz">Responder en voz alta</label></div>
     <div class="opcion"><input type="checkbox" id="a-pantalla"><label for="a-pantalla">Mantener la pantalla encendida</label></div>
     <p class="ayuda" id="a-msg"></p>
+    <details style="margin:8px 0;">
+      <summary style="cursor:pointer; font-weight:700;">📲 Pasar estos ajustes a otro aparato (o a la app)</summary>
+      <p class="ayuda">En el aparato que ya está configurado tocá <b>Copiar ajustes</b>. En el nuevo, mantené apretado el cuadro, tocá <b>Pegar</b> y después <b>Cargar ajustes</b>.</p>
+      <button type="button" id="a-copiarajustes" class="secundario" style="margin:4px 0;">📋 Copiar ajustes</button>
+      <textarea id="a-pegarajustes" rows="3" style="width:100%; box-sizing:border-box; margin-top:6px;" placeholder="Pegá acá los ajustes copiados"></textarea>
+      <button type="button" id="a-cargarajustes" class="secundario" style="margin:4px 0;">📥 Cargar ajustes</button>
+    </details>
     <div class="botones">
       <button type="button" class="secundario" id="a-probar">Probar voz</button>
       <button type="button" class="secundario" id="a-cancelar">Cerrar</button>
@@ -110,9 +117,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=29"></script>
-<script src="nucleo.js?v=29"></script>
-<script src="detector.js?v=29"></script>
+<script src="nativo.js?v=30"></script>
+<script src="nucleo.js?v=30"></script>
+<script src="detector.js?v=30"></script>
 <script>
 (function(){
   'use strict';
@@ -560,6 +567,25 @@
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
+  // Pasar los ajustes de un aparato a otro (por ejemplo, de Chrome a la app de Android) copiando y pegando.
+  const AJUSTES_QUE_PASAN = ['clave', 'nombre', 'lugar', 'lat', 'lon', 'sistema', 'codigo', 'compu', 'tomtom', 'cuotas', 'palabra', 'aprendidas', 'avisos', 'voz', 'pantalla', 'manosLibres'];
+  $('a-copiarajustes').addEventListener('click', async () => {
+    const datos = {}; AJUSTES_QUE_PASAN.forEach(k => { if (config[k] !== undefined) datos[k] = config[k]; });
+    const texto = 'MORSIS:' + btoa(unescape(encodeURIComponent(JSON.stringify(datos))));
+    try{ await navigator.clipboard.writeText(texto); $('a-msg').textContent = '✅ Ajustes copiados. Ahora pegalos en el otro aparato. (Incluyen tus claves: no los mandes a nadie.)'; }
+    catch(_){ $('a-pegarajustes').value = texto; $('a-pegarajustes').select(); $('a-msg').textContent = 'Copiá el texto del cuadro (mantenelo apretado → Copiar) y pegalo en el otro aparato.'; }
+  });
+  $('a-cargarajustes').addEventListener('click', () => {
+    const t = $('a-pegarajustes').value.trim();
+    let datos = null;
+    try{ datos = JSON.parse(decodeURIComponent(escape(atob(t.replace(/^MORSIS:/, '').replace(/\s+/g, ''))))); }catch(_){}
+    if (!datos || typeof datos !== 'object'){ $('a-msg').textContent = 'Eso no parecen ajustes de Morsis. Copialos de nuevo con «Copiar ajustes».'; return; }
+    AJUSTES_QUE_PASAN.forEach(k => { if (datos[k] !== undefined) config[k] = datos[k]; });
+    guardarConfig(); $('a-pegarajustes').value = '';
+    dlg.close(); abrirAjustes(); pintarModo(); aplicarPantalla();
+    $('a-msg').textContent = '✅ Ajustes cargados. Revisá que esté todo y tocá Guardar.';
+    if (config.manosLibres) iniciarFondo();
+  });
   function pintarAprendidas(){ const a = config.aprendidas || []; $('a-aprendidas').textContent = a.length ? 'Ya aprendió: ' + a.map(x => '«' + x + '»').join(', ') : 'Todavía no aprendió cómo lo decís.'; }
   $('a-ensenar').addEventListener('click', () => { dlg.close(); ensenarPalabra(); });
   $('a-olvidar').addEventListener('click', () => { config.aprendidas = []; guardarConfig(); pintarAprendidas(); });
