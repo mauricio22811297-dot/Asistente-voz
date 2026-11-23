@@ -60,6 +60,13 @@ class ServicioPalabra : Service(), RecognitionListener {
     private var ultimoParcial = ""
     private var ultimoDespertar = 0L
     private var frases: List<String> = emptyList()   // modo estricto: solo estas frases (vacío = modo aproximado)
+    // Modo "tu voz" (MFCC + DTW): con 3 o más muestras grabadas se usa este en vez de Vosk.
+    private var muestras: List<Array<DoubleArray>> = emptyList()
+    private var umbralVoz = 0.0
+    private var grabandoHasta = 0L
+    private var detectorVoz: DetectorVozPropia? = null
+    private fun usarVozPropia() = muestras.size >= 3
+    private fun grabando() = System.currentTimeMillis() < grabandoHasta
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -68,6 +75,7 @@ class ServicioPalabra : Service(), RecognitionListener {
         instancia = this
         crearCanales()
         palabra = Palabra.leer(this)
+        recargarMuestras()
         val n = notificacion("Preparando el detector…")
         if (Build.VERSION.SDK_INT >= 29) startForeground(ID_FIJA, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(ID_FIJA, n)
@@ -91,7 +99,60 @@ class ServicioPalabra : Service(), RecognitionListener {
     }
 
     /** Cambió la palabra o la sensibilidad: se rearma el reconocedor con la gramática nueva. */
-    fun recargarPalabra() { main.post { palabra = Palabra.leer(this); detenerEscucha(); aplicar() } }
+    fun recargarPalabra() { main.post { palabra = Palabra.leer(this); recargarMuestras(); detenerEscucha(); aplicar() } }
+
+    fun cuantasMuestras() = muestras.size
+
+    private fun recargarMuestras() {
+        muestras = VozPropia.leer(filesDir)
+        umbralVoz = VozPropia.umbral(muestras, palabra.sensibilidad)
+    }
+
+    /** La próxima vez que hables (en 15 s) se guarda como muestra de tu palabra. */
+    fun grabarMuestra() {
+        main.post {
+            grabandoHasta = System.currentTimeMillis() + 15_000
+            detenerEscucha(); aplicar()
+            avisarMuestra(false, "Decí «" + palabraVisible() + "» ahora…", grabando = true)
+            main.postDelayed({ if (grabandoHasta != 0L && !grabando()) { grabandoHasta = 0L; avisarMuestra(false, "No te escuché. Probá de nuevo, más cerca."); detenerEscucha(); aplicar() } }, 15_200)
+        }
+    }
+
+    fun borrarMuestras() { main.post { VozPropia.borrar(filesDir); recargarMuestras(); detenerEscucha(); aplicar() } }
+
+    private fun avisarMuestra(ok: Boolean, texto: String, grabando: Boolean = false) {
+        MainActivity.actual?.puente?.emitir(JSONObject().put("tipo", "muestra").put("ok", ok).put("texto", texto)
+            .put("total", muestras.size).put("grabando", grabando))
+    }
+
+    /** Pedazo de voz del modo "tu voz" (llega desde el hilo del micrófono). */
+    private fun alPedazo(audio: ShortArray) {
+        val limpio = VozPropia.recortar(audio)
+        val seg = VozPropia.duracion(limpio)
+        if (grabando()) {
+            if (seg < 0.3 || seg > 1.8) {
+                avisarMuestra(false, if (seg < 0.3) "Muy corto: decí la palabra completa." else "Muy largo: decí solo «" + palabraVisible() + "», sin nada más.", grabando = true)
+                return
+            }
+            VozPropia.guardar(filesDir, VozPropia.mfcc(limpio))
+            main.post {
+                grabandoHasta = 0L
+                recargarMuestras()
+                val faltan = maxOf(0, 5 - muestras.size)
+                avisarMuestra(true, if (faltan > 0) "Grabada (" + muestras.size + "). " + (if (muestras.size >= 3) "Ya funciona; con $faltan más anda mejor." else "Faltan $faltan.") else "¡Listo! Ya reconoce tu voz.")
+                detenerEscucha(); aplicar()
+            }
+            return
+        }
+        if (!usarVozPropia() || seg < 0.25) return
+        val huella = VozPropia.mfcc(limpio)
+        var mejor = Double.MAX_VALUE
+        for (m in muestras) mejor = minOf(mejor, VozPropia.dtw(m, huella, prefijo = true))
+        val parecido = if (mejor == Double.MAX_VALUE) 0 else Math.round(umbralVoz / mejor * 100).toInt()
+        oido("🔊 parecido $parecido% (se activa desde 100%)", false)
+        if (mejor <= umbralVoz) main.post { despertar() }
+    }
+
 
     /** Dictado o voz en curso (true) o terminado (false): mientras tanto se suelta el micrófono. */
     fun enUso(si: Boolean) {
@@ -169,9 +230,11 @@ class ServicioPalabra : Service(), RecognitionListener {
 
     private fun aplicar() {
         val ahora = System.currentTimeMillis()
-        val debe = modelo != null && usos == 0 && !pausadoPorUsuario && ahora >= pausaHasta && permiso()
+        val debe = (modelo != null || usarVozPropia() || grabando()) && usos == 0 && !pausadoPorUsuario && ahora >= pausaHasta && permiso()
         if (debe) iniciarEscucha() else detenerEscucha()
         when {
+            grabando() -> {}
+            debe && usarVozPropia() -> avisar("Escuchando «" + palabraVisible() + "» con tu voz (" + muestras.size + " muestras)")
             modelo == null -> {}
             !permiso() -> avisar("Falta el permiso del micrófono: abrí Morsis.")
             pausadoPorUsuario -> avisar("En pausa. Tocá «Seguir» para que vuelva a escuchar.")
@@ -198,6 +261,15 @@ class ServicioPalabra : Service(), RecognitionListener {
     private fun palabraVisible() = getSharedPreferences("morsis", MODE_PRIVATE).getString("palabra", "Morsis") ?: "Morsis"
 
     private fun iniciarEscucha() {
+        if (usarVozPropia() || grabando()) {
+            if (escucha != null) detenerVosk()
+            if (detectorVoz == null) {
+                val d = DetectorVozPropia({ alPedazo(it) }, { e -> avisar("No pude escuchar: $e. Reintento…"); main.postDelayed({ detenerEscucha(); aplicar() }, 5000) })
+                detectorVoz = d
+                d.iniciar()
+            }
+            return
+        }
         if (escucha != null) return
         val m = modelo ?: return
         try {
@@ -218,6 +290,11 @@ class ServicioPalabra : Service(), RecognitionListener {
     }
 
     private fun detenerEscucha() {
+        detectorVoz?.let { d -> detectorVoz = null; d.detener() }
+        detenerVosk()
+    }
+
+    private fun detenerVosk() {
         val s = escucha ?: return
         escucha = null
         try { s.stop(); s.shutdown() } catch (_: Exception) { }

@@ -40,6 +40,15 @@ android {
     }
     buildFeatures { buildConfig = true }
     lint { abortOnError = false; checkReleaseBuilds = false }
+    testOptions {
+        unitTests.all {
+            it.testLogging {
+                showStandardStreams = true
+                events("passed", "failed")
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            }
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -50,4 +59,5 @@ android {
 dependencies {
     implementation("net.java.dev.jna:jna:5.13.0@aar")
     implementation("com.alphacephei:vosk-android:0.3.47@aar")
+    testImplementation("junit:junit:4.13.2")
 }

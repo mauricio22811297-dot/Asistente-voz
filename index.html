@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v33</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v34</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -102,6 +102,13 @@
       <option value="baja">Baja: hay que decirla clarito (casi nunca se activa sin querer)</option>
     </select>
     <p class="ayuda" id="a-errordetector" style="color:#ff8a8a;"></p>
+    <div id="a-mivoz" hidden style="margin:8px 0; padding:8px; border:1px solid var(--borde); border-radius:10px;">
+      <div style="font-weight:700;">🎙️ Reconocer mi voz (recomendado)</div>
+      <p class="ayuda">Grabá la palabra 5 veces, de a una, como la decís normalmente. Así reconoce «Morsis» aunque no esté en el diccionario.</p>
+      <p class="ayuda" id="a-muestras" style="font-weight:700;"></p>
+      <button type="button" id="a-grabar" class="secundario" style="margin:4px 0;">🔴 Grabar la palabra</button>
+      <button type="button" id="a-borrarmuestras" class="secundario" style="margin:4px 0;">Borrar mis grabaciones</button>
+    </div>
     <button type="button" id="a-ensenar" class="secundario" style="margin:6px 0;">🎓 Enseñarle cómo digo «Morsis»</button>
     <p class="ayuda" id="a-aprendidas"></p>
     <button type="button" id="a-olvidar" class="secundario" style="margin:2px 0 8px;">Borrar lo aprendido</button>
@@ -125,9 +132,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=33"></script>
-<script src="nucleo.js?v=33"></script>
-<script src="detector.js?v=33"></script>
+<script src="nativo.js?v=34"></script>
+<script src="nucleo.js?v=34"></script>
+<script src="detector.js?v=34"></script>
 <script>
 (function(){
   'use strict';
@@ -581,6 +588,11 @@
           estado.textContent = ensenando ? `🎓 Bien («${ev.texto}»). Decí «${config.palabra}» otra vez (faltan ${ensenando})` : '✅ Listo, aprendí cómo lo decís. Probá: «' + config.palabra + '»';
           if (!ensenando) setTimeout(textoEnReposo, 4000);
         }
+      } else if (ev.tipo === 'muestra'){
+        $('a-grabar').disabled = !!ev.grabando;
+        $('a-grabar').textContent = ev.grabando ? '🎤 Decila ahora…' : '🔴 Grabar la palabra';
+        pintarMuestras(ev.total, ev.texto);
+        if (!dlg.open) $('oido').textContent = ev.texto;
       } else if (ev.tipo === 'estado'){
         if (!ocupado && !rec && !ensenando) $('oido').textContent = '🎙️ ' + ev.texto;
       }
@@ -594,10 +606,24 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sensibilidad').value = config.sensibilidad || 'media'; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-cuotas').value = config.cuotas || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); $('a-voz').checked = !!config.voz; $('a-seguir').checked = !!config.seguirEscuchando; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sensibilidad').value = config.sensibilidad || 'media'; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-cuotas').value = config.cuotas || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); pintarMuestras(); $('a-voz').checked = !!config.voz; $('a-seguir').checked = !!config.seguirEscuchando; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
+  // Reconocer mi voz (solo en la app): se graban muestras de la palabra y la app las compara con lo que oye.
+  function pintarMuestras(n, texto){
+    if (!NATIVO) return;
+    $('a-mivoz').hidden = false;
+    n = typeof n === 'number' ? n : MorsisNativo.cuantasMuestras();
+    $('a-muestras').textContent = (texto ? texto + ' · ' : '') + 'Grabadas: ' + n + '/5' + (n >= 3 ? ' ✅ (usa tu voz)' : '');
+  }
+  if (NATIVO){
+    $('a-grabar').addEventListener('click', () => {
+      if (!config.manosLibres){ $('a-muestras').textContent = 'Primero activá «Manos libres» (el botón de la pantalla principal).'; return; }
+      $('a-grabar').disabled = true; MorsisNativo.grabarMuestra();
+    });
+    $('a-borrarmuestras').addEventListener('click', () => { if (confirm('¿Borrar tus grabaciones de la palabra?')){ MorsisNativo.borrarMuestras(); setTimeout(() => pintarMuestras(), 400); } });
+  }
   // Pasar los ajustes de un aparato a otro (por ejemplo, de Chrome a la app de Android) copiando y pegando.
   const AJUSTES_QUE_PASAN = ['clave', 'nombre', 'lugar', 'lat', 'lon', 'sistema', 'codigo', 'compu', 'tomtom', 'cuotas', 'palabra', 'aprendidas', 'avisos', 'voz', 'pantalla', 'manosLibres', 'sensibilidad', 'seguirEscuchando'];
   $('a-copiarajustes').addEventListener('click', async () => {

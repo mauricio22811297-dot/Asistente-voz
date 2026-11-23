@@ -35,7 +35,10 @@ jobs:
       - name: Compilar
         env:
           MORSIS_KEYSTORE_PASS: ${{ secrets.MORSIS_KEYSTORE_PASS }}
-        run: gradle -p android assembleRelease --no-daemon --stacktrace
+        run: gradle -p android testReleaseUnitTest assembleRelease --no-daemon --stacktrace -i 2>&1 | tee compilacion.log; exit ${PIPESTATUS[0]}
+      - name: Resultado de los controles del detector
+        if: always()
+        run: grep -h "umbral=" compilacion.log || true
       - name: Publicar el instalador (link fijo)
         env:
           GH_TOKEN: ${{ github.token }}

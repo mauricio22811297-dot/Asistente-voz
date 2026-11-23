@@ -1,8 +1,8 @@
 'use strict';
 // Service worker mínimo: guarda la "cáscara" de la app para que abra rápido y sin conexión.
 // Las consultas a Google, al clima y demás NO se guardan: siempre van a internet.
-const VERSION = 'asistente-v33';
-const ARCHIVOS = ['./', './index.html', './nativo.js?v=33', './nucleo.js?v=33', './detector.js?v=33', './manifest.json', './icon-192.png', './icon-512.png'];
+const VERSION = 'asistente-v34';
+const ARCHIVOS = ['./', './index.html', './nativo.js?v=34', './nucleo.js?v=34', './detector.js?v=34', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(ARCHIVOS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

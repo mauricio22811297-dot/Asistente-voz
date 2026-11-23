@@ -46,5 +46,12 @@ class Puente(private val act: MainActivity, private val web: WebView) {
     @JavascriptInterface fun escucharPalabra(activo: Boolean) { main.post { act.escucharPalabra(activo) } }
     @JavascriptInterface fun configurar(json: String) { Palabra.guardar(act, json); ServicioPalabra.instancia?.recargarPalabra() }
     @JavascriptInterface fun pantallaEncendida(si: Boolean) { main.post { act.pantallaEncendida(si) } }
+    @JavascriptInterface fun grabarMuestra() {
+        val sv = ServicioPalabra.instancia
+        if (sv == null) emitir(JSONObject().put("tipo", "muestra").put("ok", false).put("texto", "Primero activá «Manos libres».").put("total", 0))
+        else sv.grabarMuestra()
+    }
+    @JavascriptInterface fun borrarMuestras() { ServicioPalabra.instancia?.borrarMuestras() ?: VozPropia.borrar(act.filesDir) }
+    @JavascriptInterface fun cuantasMuestras(): Int = ServicioPalabra.instancia?.cuantasMuestras() ?: VozPropia.leer(act.filesDir).size
     @JavascriptInterface fun bateria() { main.post { act.pedirBateria(true) } }
 }
