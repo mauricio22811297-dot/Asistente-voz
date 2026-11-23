@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v34</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v35</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -124,6 +124,7 @@
       <textarea id="a-pegarajustes" rows="3" style="width:100%; box-sizing:border-box; margin-top:6px;" placeholder="Pegá acá los ajustes copiados"></textarea>
       <button type="button" id="a-cargarajustes" class="secundario" style="margin:4px 0;">📥 Cargar ajustes</button>
     </details>
+    <button type="button" id="a-diagnostico" class="secundario" style="margin:4px 0;">🧪 Copiar diagnóstico (para mandárselo a Claude)</button>
     <div class="botones">
       <button type="button" class="secundario" id="a-probar">Probar voz</button>
       <button type="button" class="secundario" id="a-cancelar">Cerrar</button>
@@ -132,9 +133,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=34"></script>
-<script src="nucleo.js?v=34"></script>
-<script src="detector.js?v=34"></script>
+<script src="nativo.js?v=35"></script>
+<script src="nucleo.js?v=35"></script>
+<script src="detector.js?v=35"></script>
 <script>
 (function(){
   'use strict';
@@ -152,6 +153,10 @@
   let config = Object.assign({}, porDefecto);
   try { Object.assign(config, JSON.parse(almacen.get(CLAVE_CONFIG) || '{}')); } catch (_) {}
   const NATIVO = !!window.MorsisNativo;   // dentro de la app de Android (ver nativo.js)
+  // Diagnóstico: qué pasó y cuándo (las últimas 200 cosas), para copiarlo desde Ajustes y mandarlo.
+  const diagnostico = [];
+  function anotar(t){ diagnostico.push([Date.now(), String(t).slice(0, 160)]); if (diagnostico.length > 200) diagnostico.shift(); }
+  let pitarAlEmpezar = false;
   const guardarConfig = () => {
     almacen.set(CLAVE_CONFIG, JSON.stringify(config));
     // La app escucha «Morsis» por su cuenta (con la pantalla apagada): se le pasa la palabra y lo aprendido.
@@ -167,6 +172,7 @@
 
   // ------------------------------------------------ voz de respuesta
   function decir(texto){
+    anotar('habla: ' + String(texto || '').slice(0, 40));
     if (!config.voz || !('speechSynthesis' in window)) return Promise.resolve();
     return new Promise(listo => {
     const fin = () => { clearTimeout(corte); listo(); };
@@ -284,6 +290,7 @@
   if (!Rec){ estado.textContent = 'Este navegador no tiene dictado por voz. Abrilo en Chrome.'; mic.disabled = true; }
 
   async function enviar(dicho){
+    anotar('consulta: ' + dicho);
     detenerFondo();
     ocupado = true; mic.disabled = true; estado.textContent = '🤖 Pensando…';
     mensaje('yo', dicho);
@@ -500,13 +507,20 @@
     const r = new Rec(); rec = r;
     r.lang = 'es-AR'; r.interimResults = true; r.maxAlternatives = 1;
     let final = '', parcial = '';
-    r.onstart = () => { mic.classList.add('escuchando'); estado.textContent = previo ? '🎤 ' + previo + '… (seguí)' : '🎤 Escuchando…'; };
+    anotar('dictado: pedido');
+    r.onstart = () => {
+      anotar('dictado: listo para escuchar');
+      mic.classList.add('escuchando'); estado.textContent = previo ? '🎤 ' + previo + '… (seguí)' : '🎤 Escuchando… hablá';
+      // En la app el pitido suena recién cuando el dictado ya escucha (si no, lo primero que decís se pierde).
+      if (pitarAlEmpezar){ pitarAlEmpezar = false; pitidoCorto(); }
+    };
     r.onresult = ev => {
       let t = ''; for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
       parcial = t; estado.textContent = '🎤 ' + (previo ? previo + ' ' : '') + t;
-      if (ev.results[ev.results.length - 1].isFinal) final = t;
+      if (ev.results[ev.results.length - 1].isFinal){ final = t; anotar('dictado: entendió «' + t + '»'); }
     };
     r.onerror = ev => {
+      anotar('dictado: error ' + ev.error);
       const m = { 'not-allowed': 'No tengo permiso para usar el micrófono. Tocá el candado de la barra de direcciones y permitilo.',
         'service-not-allowed': 'No tengo permiso para usar el micrófono.', 'no-speech': 'No escuché nada. Tocá el micrófono y hablá cerca.',
         'audio-capture': 'No se encontró un micrófono.', 'network': 'El dictado necesita internet y no hubo conexión.' };
@@ -514,6 +528,7 @@
       if (ev.error !== 'aborted') estado.textContent = m[ev.error] || ('No se pudo usar el micrófono (' + ev.error + ').');
     };
     r.onend = () => {
+      anotar('dictado: terminó');
       rec = null; mic.classList.remove('escuchando');
       const dicho = ((previo ? previo + ' ' : '') + (final || parcial || '')).trim();
       if (dicho && extensiones < 2 && N.quedaIncompleta(dicho)){ setTimeout(() => escuchar(dicho, extensiones + 1), 50); return; }
@@ -575,11 +590,13 @@
     window.__morsisApp = ev => {
       if (ev.tipo === 'despertar'){
         // La app oyó «Morsis» (aunque la pantalla estuviera apagada): se toma el pedido.
+        anotar('despertó' + (ocupado ? ' (ocupado)' : '') + (rec ? ' (ya dictando)' : ''));
         if (ocupado || rec) return;
-        estado.textContent = '🎤 Te escucho… decí tu pedido';
-        pitidoCorto();
-        setTimeout(() => escuchar(), 150);
+        estado.textContent = '⏳ Un segundo…';
+        pitarAlEmpezar = true;
+        escuchar();
       } else if (ev.tipo === 'oido'){
+        anotar('oyó: ' + ev.texto);
         if (ocupado || rec) return;
         if (ev.final){ oidos.unshift(ev.texto); oidos.length = Math.min(oidos.length, 3); ultimoFinal = { t: ev.texto, cuando: Date.now() }; }
         $('oido').textContent = 'Escuché: «' + ev.texto + '»' + (oidos.length ? '  · antes: ' + oidos.map(x => '«' + x + '»').join(' ') : '');
@@ -594,6 +611,7 @@
         pintarMuestras(ev.total, ev.texto);
         if (!dlg.open) $('oido').textContent = ev.texto;
       } else if (ev.tipo === 'estado'){
+        anotar('estado: ' + ev.texto);
         if (!ocupado && !rec && !ensenando) $('oido').textContent = '🎙️ ' + ev.texto;
       }
     };
@@ -626,6 +644,14 @@
   }
   // Pasar los ajustes de un aparato a otro (por ejemplo, de Chrome a la app de Android) copiando y pegando.
   const AJUSTES_QUE_PASAN = ['clave', 'nombre', 'lugar', 'lat', 'lon', 'sistema', 'codigo', 'compu', 'tomtom', 'cuotas', 'palabra', 'aprendidas', 'avisos', 'voz', 'pantalla', 'manosLibres', 'sensibilidad', 'seguirEscuchando'];
+  $('a-diagnostico').addEventListener('click', async () => {
+    const t0 = diagnostico.length ? diagnostico[0][0] : Date.now();
+    const hora = new Date(t0).toLocaleTimeString('es-AR');
+    const texto = 'Diagnóstico Morsis ' + (document.querySelector('h1 small') || {}).textContent + ' desde ' + hora + '\n'
+      + diagnostico.map(([t, x]) => '+' + ((t - t0) / 1000).toFixed(1) + 's ' + x).join('\n');
+    try{ await navigator.clipboard.writeText(texto); $('a-msg').textContent = '✅ Diagnóstico copiado: pegalo en el chat con Claude.'; }
+    catch(_){ $('a-pegarajustes').closest('details').open = true; $('a-pegarajustes').value = texto; $('a-pegarajustes').select(); $('a-msg').textContent = 'Copiá el texto del cuadro (mantenelo apretado → Seleccionar todo → Copiar) y pegalo en el chat.'; }
+  });
   $('a-copiarajustes').addEventListener('click', async () => {
     const datos = {}; AJUSTES_QUE_PASAN.forEach(k => { if (config[k] !== undefined) datos[k] = config[k]; });
     const texto = 'MORSIS:' + btoa(unescape(encodeURIComponent(JSON.stringify(datos))));
