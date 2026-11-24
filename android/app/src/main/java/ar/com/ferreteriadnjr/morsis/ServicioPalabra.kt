@@ -152,8 +152,8 @@ class ServicioPalabra : Service(), RecognitionListener {
         val mejor = distancias.first()
         val segunda = if (distancias.size > 1) distancias[1] else mejor
         val pct = { d: Double -> if (d == Double.MAX_VALUE) 0 else Math.round(umbralVoz / d * 100).toInt() }
-        oido("🔊 parecido " + pct(mejor) + "% / 2ª " + pct(segunda) + "% (se activa si las dos pasan 100%)", false)
-        if (mejor <= umbralVoz && segunda <= umbralVoz) main.post { despertar() }
+        oido("🔊 parecido " + pct(mejor) + "% / 2ª " + pct(segunda) + "%", false)
+        if (VozPropia.esLaPalabra(distancias, umbralVoz)) main.post { despertar() }
     }
 
 

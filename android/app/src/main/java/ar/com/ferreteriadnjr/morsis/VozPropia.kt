@@ -173,6 +173,16 @@ object VozPropia {
         return suma / n * factor
     }
 
+    /**
+     * ¿Es la palabra? La más parecida tiene que pasar el umbral y la segunda más parecida tiene que andar cerca
+     * (hasta 20 % más): tu «Morsis» se parece a varias muestras; un ruido suele parecerse a una sola.
+     */
+    fun esLaPalabra(distancias: List<Double>, umbral: Double): Boolean {
+        val d = distancias.sorted()
+        if (d.isEmpty() || d[0] > umbral) return false
+        return d.size < 2 || d[1] <= umbral * 1.2
+    }
+
     /** Saca el silencio del principio y del final (lo que está muy por debajo de lo más fuerte). */
     fun recortar(audio: ShortArray): ShortArray {
         val n = audio.size / PASO
