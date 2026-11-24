@@ -339,3 +339,15 @@ test('"abramos una venta" va al sistema, y lo que se dice enseguida ("dos codos 
   await c.responder('recordame a las 5 llamar a gas sur');
   assert.equal(preguntas.length, 2); assert.equal(gemini, 1);
 });
+
+test('«venta» va al sistema y el «anotá un teflón…» que sigue también (no a una lista del celu)', async () => {
+  const preguntas = [];
+  const conector = { nombre: 'consultar_ferreteria', declaracion: { name: 'consultar_ferreteria' }, ejecutar: async a => { preguntas.push(a.pregunta); return { respuesta: 'ok' }; } };
+  const listas = N.crearListas(almacenEnMemoria());
+  const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas, temporizadores: { poner() {}, cancelarTodos: () => 0 }, conectores: [conector] });
+  const c = N.crearCerebro({ fetchFn: async () => { throw new Error('no debería ir a Gemini'); }, getClave: () => 'K', herramientas: h });
+  await c.responder('venta');
+  await c.responder('anota un teflón tres cuartos por 10 de taxa');
+  assert.deepEqual(preguntas, ['venta', 'anota un teflón tres cuartos por 10 de taxa']);
+  assert.deepEqual(Object.keys(listas.todas()), []);
+});
