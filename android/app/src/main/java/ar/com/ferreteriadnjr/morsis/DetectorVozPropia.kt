@@ -46,9 +46,9 @@ class DetectorVozPropia(private val alPedazo: (ShortArray) -> Unit, private val 
                     val copia = paso.copyOf()
                     if (!hablando) {
                         previo.addLast(copia); if (previo.size > 30) previo.removeFirst()
-                        if (rms > max(piso * 3.2, 350.0)) {
+                        if (rms > max(piso * 2.5, 180.0)) {   // más sensible: también cuando hablás a un par de metros
                             voz++
-                            if (voz >= 6) {                // 60 ms seguidos de voz: empieza un pedazo
+                            if (voz >= 5) {                // 50 ms seguidos de voz: empieza un pedazo
                                 hablando = true; silencio = 0
                                 pedazo.clear(); pedazo.addAll(previo); previo.clear()
                             }
@@ -58,7 +58,7 @@ class DetectorVozPropia(private val alPedazo: (ShortArray) -> Unit, private val 
                         }
                     } else {
                         pedazo.add(copia)
-                        silencio = if (rms < max(piso * 2.0, 250.0)) silencio + 1 else 0
+                        silencio = if (rms < max(piso * 1.6, 130.0)) silencio + 1 else 0
                         // Termina con 0,3 s de silencio, o a los 2 s (si siguió hablando: "Morsis, qué hora es…").
                         if (silencio >= 30 || pedazo.size >= 200) {
                             val total = ShortArray(pedazo.sumOf { it.size })

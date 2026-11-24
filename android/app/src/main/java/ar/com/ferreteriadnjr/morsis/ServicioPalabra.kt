@@ -146,11 +146,14 @@ class ServicioPalabra : Service(), RecognitionListener {
         }
         if (!usarVozPropia() || seg < 0.25) return
         val huella = VozPropia.mfcc(limpio, restarMedia = false)
-        var mejor = Double.MAX_VALUE
-        for (m in muestras) mejor = minOf(mejor, VozPropia.dtw(m, huella, prefijo = true))
-        val parecido = if (mejor == Double.MAX_VALUE) 0 else Math.round(umbralVoz / mejor * 100).toInt()
-        oido("🔊 parecido $parecido% (se activa desde 100%)", false)
-        if (mejor <= umbralVoz) main.post { despertar() }
+        // Se compara con TODAS las muestras: para despertar, lo oído tiene que parecerse a por lo menos 2
+        // (un ruido o una charla a veces se parece a una sola muestra; tu «Morsis» se parece a varias).
+        val distancias = muestras.map { VozPropia.dtw(it, huella, prefijo = true) }.sorted()
+        val mejor = distancias.first()
+        val segunda = if (distancias.size > 1) distancias[1] else mejor
+        val pct = { d: Double -> if (d == Double.MAX_VALUE) 0 else Math.round(umbralVoz / d * 100).toInt() }
+        oido("🔊 parecido " + pct(mejor) + "% / 2ª " + pct(segunda) + "% (se activa si las dos pasan 100%)", false)
+        if (mejor <= umbralVoz && segunda <= umbralVoz) main.post { despertar() }
     }
 
 

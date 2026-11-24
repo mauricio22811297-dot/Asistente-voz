@@ -54,6 +54,11 @@ class VozPropiaTest {
         assertTrue("otra palabra no activa", otra > umbral)
         assertTrue("una palabra corta no activa", corta > umbral)
         assertTrue("se distinguen con margen", otra > propia * 1.3)
+        // Votación: la palabra propia se parece a por lo menos 2 muestras; la otra a ninguna.
+        val h = oido(palabra(morsis, 1.05, 0.7, 400.0))
+        assertTrue("2 muestras", muestras.count { VozPropia.dtw(it, h, prefijo = true) <= umbral } >= 2)
+        val o = oido(palabra(tornillo))
+        assertTrue("ninguna", muestras.count { VozPropia.dtw(it, o, prefijo = true) <= umbral } == 0)
     }
 
     @Test fun conAlgoDichoDespuesTambienActiva() {
