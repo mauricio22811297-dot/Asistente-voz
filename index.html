@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v40</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v41</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -133,9 +133,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=40"></script>
-<script src="nucleo.js?v=40"></script>
-<script src="detector.js?v=40"></script>
+<script src="nativo.js?v=41"></script>
+<script src="nucleo.js?v=41"></script>
+<script src="detector.js?v=41"></script>
 <script>
 (function(){
   'use strict';
@@ -293,8 +293,18 @@
   let rec = null, ocupado = false, seguimiento = false;
   if (!Rec){ estado.textContent = 'Este navegador no tiene dictado por voz. Abrilo en Chrome.'; mic.disabled = true; }
 
+  // Modo charla: después de «Morsis, charlemos» se sigue hablando sin repetir la palabra, hasta «chau» o un silencio.
+  let modoCharla = false, silenciosCharla = 0;
   async function enviar(dicho){
     anotar('consulta: ' + dicho);
+    silenciosCharla = 0;
+    if (/^(charlemos|conversemos|hablemos|modo charla|charla|vamos a charlar)\b/i.test(String(dicho).trim()) && config.manosLibres){
+      modoCharla = true;
+      mensaje('yo', dicho);
+      const t = 'Dale, charlemos. Te escucho; cuando termines decime chau.';
+      mensaje('ia', t); await decir(t);
+      seguimiento = true; escuchar(); return;
+    }
     detenerFondo();
     ocupado = true; mic.disabled = true; estado.textContent = '🤖 Pensando…';
     mensaje('yo', dicho);
@@ -314,10 +324,11 @@
     // ("no, el de media pulgada"). Recuerda lo anterior.
     // Si Morsis terminó con una PREGUNTA ("¿qué sumo?", "¿cuál de los dos?"), se queda escuchando la respuesta.
     const pregunto = /\?\s*$/.test(String(r.texto || '').trim());
-    if (config.manosLibres && (config.seguirEscuchando || pregunto) && (NATIVO || (config.sinPitidos && detectorListo))){
-      seguimiento = true; estado.textContent = '🎤 ¿Algo más?'; escuchar(); return;
+    const seguir = modoCharla || config.seguirEscuchando || pregunto;
+    if (config.manosLibres && seguir && (NATIVO || (config.sinPitidos && detectorListo))){
+      seguimiento = true; estado.textContent = modoCharla ? '💬 Te escucho… (decí «chau» para terminar)' : '🎤 ¿Algo más?'; escuchar(); return;
     }
-    if (config.manosLibres && (config.seguirEscuchando || pregunto)){
+    if (config.manosLibres && seguir){
       esperandoOrden = Date.now() + 9000;
       estado.textContent = '🎤 ¿Algo más? (podés seguir sin decir «' + config.palabra + '»)';
       setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 9200);
@@ -539,11 +550,15 @@
       const dicho = ((previo ? previo + ' ' : '') + (final || parcial || '')).trim();
       if (dicho && extensiones < 2 && N.quedaIncompleta(dicho)){ setTimeout(() => escuchar(dicho, extensiones + 1), 50); return; }
       const eraSeguimiento = seguimiento;
-      const cierre = seguimiento && /^(nada|no nada|gracias|listo|chau|ok|okey|esta bien|está bien|cancel\w*|basta)[.!]*$/i.test(dicho);
+      const cierre = seguimiento && /^(nada|no nada|gracias|muchas gracias|listo|chau|chau morsis|ok|okey|esta bien|está bien|cancel\w*|basta|terminamos|nada más|nada mas)[.!]*$/i.test(dicho);
       seguimiento = false;
       if (dicho && !cierre) enviar(dicho);
-      else if (cierre){ textoEnReposo(); setTimeout(iniciarFondo, 300); }
-      else if (eraSeguimiento){ textoEnReposo(); setTimeout(iniciarFondo, 300); }
+      else if (cierre){
+        if (modoCharla){ modoCharla = false; mensaje('yo', dicho); mensaje('ia', 'Listo. Cuando me necesites, decime ' + config.palabra + '.'); decir('Listo.'); }
+        textoEnReposo(); setTimeout(iniciarFondo, 300);
+      }
+      else if (eraSeguimiento && modoCharla && ++silenciosCharla < 2){ seguimiento = true; escuchar(); }   // un silencio no corta la charla
+      else if (eraSeguimiento){ if (modoCharla){ modoCharla = false; anotar('charla: terminó por silencio'); } textoEnReposo(); setTimeout(iniciarFondo, 300); }
       else { if (/Escuchando/.test(estado.textContent)) estado.textContent = 'No escuché nada. Tocá el micrófono y probá de nuevo.'; setTimeout(iniciarFondo, 1500); }
     };
     try{ r.start(); }catch(_){ rec = null; mic.classList.remove('escuchando'); }
