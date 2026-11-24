@@ -52,12 +52,16 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v41</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v42</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
 <main>
-  <button id="mic" aria-label="Tocar para hablar">🎤</button>
+  <div style="display:flex; align-items:center; gap:18px;">
+    <button id="mic" aria-label="Tocar para hablar">🎤</button>
+    <button id="btn-foto" class="icono" aria-label="Sacar una foto" style="width:64px; height:64px; border-radius:50%; font-size:30px;">📷</button>
+    <input type="file" id="foto" accept="image/*" capture="environment" hidden>
+  </div>
   <div id="estado" role="status">Tocá el micrófono para hablar</div>
   <button id="btn-modo" class="modo">👂 Manos libres</button>
   <div id="oido" class="ejemplos" style="min-height:18px;"></div>
@@ -133,9 +137,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=41"></script>
-<script src="nucleo.js?v=41"></script>
-<script src="detector.js?v=41"></script>
+<script src="nativo.js?v=42"></script>
+<script src="nucleo.js?v=42"></script>
+<script src="detector.js?v=42"></script>
 <script>
 (function(){
   'use strict';
@@ -164,6 +168,44 @@
   };
 
   // ------------------------------------------------ conversación en pantalla
+  // ------------------------------------------------ foto: «¿qué es esto?»
+  function achicarFoto(archivo){
+    return new Promise((ok, mal) => {
+      const img = new Image(), url = URL.createObjectURL(archivo);
+      img.onload = () => {
+        const max = 1024, k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        const dataUrl = c.toDataURL('image/jpeg', 0.82);
+        ok({ dataUrl, base64: dataUrl.split(',')[1], tipo: 'image/jpeg' });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); mal(new Error('no pude leer la foto')); };
+      img.src = url;
+    });
+  }
+  async function preguntarPorFoto(archivo){
+    if (!archivo || ocupado) return;
+    if (!config.clave){ abrirAjustes(); return; }
+    anotar('foto');
+    detenerFondo();
+    ocupado = true; mic.disabled = true; estado.textContent = '🔎 Mirando la foto…';
+    try{
+      const f = await achicarFoto(archivo);
+      const v = $('vacio'); if (v) v.remove();
+      const d = document.createElement('div'); d.className = 'msg yo';
+      const im = document.createElement('img'); im.src = f.dataUrl; im.alt = 'Foto'; im.style.cssText = 'max-width:180px; max-height:180px; border-radius:10px; display:block;';
+      d.appendChild(im); $('conversacion').appendChild(d);
+      const r = await cerebro.responderFoto(f);
+      mensaje('ia', r.texto + (r.error ? '  [' + r.error + ']' : ''));
+      estado.textContent = '🔊 Respondiendo…';
+      await decir(r.texto);
+    }catch(e){ mensaje('ia', 'No pude leer la foto. Probá de nuevo.'); }
+    ocupado = false; mic.disabled = false; textoEnReposo(); iniciarFondo();
+  }
+  $('btn-foto').addEventListener('click', () => { $('foto').value = ''; $('foto').click(); });
+  $('foto').addEventListener('change', e => preguntarPorFoto(e.target.files && e.target.files[0]));
+
   function mensaje(clase, texto){
     const v = $('vacio'); if (v) v.remove();
     const d = document.createElement('div'); d.className = 'msg ' + clase; d.textContent = texto;

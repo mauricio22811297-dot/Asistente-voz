@@ -711,7 +711,43 @@ Si es sobre tránsito, decí si hay cortes, accidentes, obras o demoras AHORA y 
         return { texto: MENSAJES[e.tipo] || MENSAJES.error, error: e.tipo || 'error' };
       }
     }
-    return { responder, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
+    /**
+     * Foto de un producto: la IA dice qué es (corto) y arma una búsqueda; si está conectado el sistema de la
+     * ferretería, se busca ahí el precio. imagen = { base64, tipo: 'image/jpeg' }.
+     */
+    async function responderFoto(imagen, pregunta) {
+      try {
+        const j = await llamarGemini({ fetchFn, clave: getClave(), cuerpo: {
+          contents: [{ role: 'user', parts: [
+            { inline_data: { mime_type: imagen.tipo || 'image/jpeg', data: imagen.base64 } },
+            { text: `Sos el asistente de una ferretería (sanitarios, gas, electricidad, herramientas, bulonería, pinturas). ${pregunta ? 'La persona pregunta: "' + String(pregunta).slice(0, 200) + '". ' : ''}Mirá la foto y decí qué producto es.
+Respondé SOLO un JSON: {"que_es": "una frase corta para decir en voz alta, con tipo, medida y material si se ven (ej: 'Es una cupla de fusión de 3/4, de polipropileno.')", "busqueda": "3 a 6 palabras para buscarlo en la lista de precios (ej: 'cupla fusion 3/4')", "seguro": true o false}
+Si no se ve un producto o no estás seguro, poné seguro: false y en que_es decí qué ves y qué te haría falta (otra foto, más cerca, la medida).` }
+          ] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 300, responseMimeType: 'application/json' }
+        } });
+        const t = ((((j.candidates || [])[0] || {}).content || {}).parts || []).map(p => p.text || '').join('');
+        let d = {}; try { d = JSON.parse(t); } catch (_) { d = { que_es: t.trim() }; }
+        let texto = String(d.que_es || '').trim() || 'No pude darme cuenta qué es. Probá con otra foto, más cerca.';
+        const ferreteria = herramientas.find(h => h.nombre === 'consultar_ferreteria');
+        if (ferreteria && d.busqueda && d.seguro !== false) {
+          const r = await ferreteria.ejecutar({ pregunta: 'cuánto sale ' + String(d.busqueda).slice(0, 80) }).catch(() => null);
+          if (r && r.respuesta) texto += ' ' + r.respuesta;
+        }
+        turnosFoto(texto, d.busqueda);
+        return { texto, busqueda: d.busqueda || '' };
+      } catch (e) {
+        return { texto: MENSAJES[e.tipo] || MENSAJES.error, error: e.tipo || 'error' };
+      }
+    }
+    // Lo que se vio en la foto queda en la memoria de la charla ("¿y cuánto sale el de 1 pulgada?").
+    function turnosFoto(texto, busqueda) {
+      const turnos = memoria.hasta > Date.now() ? memoria.turnos.slice() : [];
+      turnos.push({ rol: 'user', texto: '[mandé una foto de un producto' + (busqueda ? ': ' + busqueda : '') + ']' }, { rol: 'model', texto: texto.slice(0, 1500) });
+      memoria = { turnos: turnos.slice(-MEMORIA_TURNOS), hasta: Date.now() + MEMORIA_MS };
+    }
+
+    return { responder, responderFoto, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
   return { crearHerramientasTransito, crearBuscadorWeb, normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };

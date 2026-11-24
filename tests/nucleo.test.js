@@ -351,3 +351,16 @@ test('«venta» va al sistema y el «anotá un teflón…» que sigue también (
   assert.deepEqual(preguntas, ['venta', 'anota un teflón tres cuartos por 10 de taxa']);
   assert.deepEqual(Object.keys(listas.todas()), []);
 });
+
+test('foto: la IA dice qué es y se busca el precio en la ferretería', async () => {
+  const cuerpos = [];
+  const fetchFn = async (u, o) => { cuerpos.push(JSON.parse(o.body)); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"que_es":"Es una cupla de fusión de 3/4.","busqueda":"cupla fusion 3/4","seguro":true}' }] } }] }) }; };
+  const preguntas = [];
+  const conector = { nombre: 'consultar_ferreteria', declaracion: { name: 'consultar_ferreteria' }, ejecutar: async a => { preguntas.push(a.pregunta); return { respuesta: 'Cupla fusión 3/4, 850 pesos.' }; } };
+  const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas(almacenEnMemoria()), temporizadores: { poner() {}, cancelarTodos: () => 0 }, conectores: [conector] });
+  const c = N.crearCerebro({ fetchFn, getClave: () => 'K', herramientas: h });
+  const r = await c.responderFoto({ base64: 'QUJD', tipo: 'image/jpeg' });
+  assert.equal(r.texto, 'Es una cupla de fusión de 3/4. Cupla fusión 3/4, 850 pesos.');
+  assert.equal(cuerpos[0].contents[0].parts[0].inline_data.data, 'QUJD');
+  assert.deepEqual(preguntas, ['cuánto sale cupla fusion 3/4']);
+});

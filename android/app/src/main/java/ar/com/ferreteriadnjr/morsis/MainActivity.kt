@@ -12,6 +12,8 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
+import android.provider.MediaStore
+import android.webkit.ValueCallback
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -35,6 +37,9 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     var puente: Puente? = null
     private var quiereEscuchar = false
+    private var archivoCallback: ValueCallback<Array<Uri>>? = null
+    private var fotoUri: Uri? = null
+    private var fotoArchivo: java.io.File? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,6 +62,12 @@ class MainActivity : Activity() {
         web.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) { runOnUiThread { request.grant(request.resources) } }
             override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) { callback.invoke(origin, true, false) }
+            // Botón 📷 de la página: abre la cámara (o la galería) y le devuelve la foto.
+            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                archivoCallback?.onReceiveValue(null)
+                archivoCallback = callback
+                return abrirCamaraOGaleria(params)
+            }
         }
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -93,6 +104,42 @@ class MainActivity : Activity() {
         puente?.voz?.cerrar()
         web.destroy()
         super.onDestroy()
+    }
+
+    private fun abrirCamaraOGaleria(params: WebChromeClient.FileChooserParams): Boolean {
+        val intents = mutableListOf<Intent>()
+        try {
+            val dir = java.io.File(cacheDir, "fotos").apply { mkdirs() }
+            dir.listFiles()?.forEach { it.delete() }   // solo la última foto
+            val f = java.io.File(dir, "foto_" + System.currentTimeMillis() + ".jpg")
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fotos", f)
+            fotoArchivo = f; fotoUri = uri
+            intents.add(Intent(MediaStore.ACTION_IMAGE_CAPTURE).putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (_: Exception) { fotoUri = null; fotoArchivo = null }
+        val galeria = try { params.createIntent() } catch (_: Exception) { Intent(Intent.ACTION_GET_CONTENT).setType("image/*") }
+        val elegir = Intent.createChooser(galeria, "Foto para Morsis").putExtra(Intent.EXTRA_INITIAL_INTENTS, intents.toTypedArray())
+        return try { @Suppress("DEPRECATION") startActivityForResult(elegir, 7); true }
+        catch (_: Exception) { archivoCallback?.onReceiveValue(null); archivoCallback = null; false }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 7) return
+        val cb = archivoCallback ?: return
+        archivoCallback = null
+        var resultado: Array<Uri>? = null
+        if (resultCode == RESULT_OK) {
+            val elegida = data?.data
+            resultado = when {
+                elegida != null -> arrayOf(elegida)                                         // de la galería
+                fotoArchivo?.let { it.exists() && it.length() > 0 } == true -> arrayOf(fotoUri!!)   // de la cámara
+                else -> null
+            }
+        }
+        cb.onReceiveValue(resultado)
     }
 
     @Deprecated("Deprecated in Java")
