@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v39</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v40</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -133,9 +133,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=39"></script>
-<script src="nucleo.js?v=39"></script>
-<script src="detector.js?v=39"></script>
+<script src="nativo.js?v=40"></script>
+<script src="nucleo.js?v=40"></script>
+<script src="detector.js?v=40"></script>
 <script>
 (function(){
   'use strict';
@@ -312,10 +312,12 @@
     textoEnReposo();
     // Charla seguida: unos segundos después de responder se puede repreguntar SIN decir "Morsis"
     // ("no, el de media pulgada"). Recuerda lo anterior.
-    if (config.manosLibres && config.seguirEscuchando && (NATIVO || (config.sinPitidos && detectorListo))){
+    // Si Morsis terminó con una PREGUNTA ("¿qué sumo?", "¿cuál de los dos?"), se queda escuchando la respuesta.
+    const pregunto = /\?\s*$/.test(String(r.texto || '').trim());
+    if (config.manosLibres && (config.seguirEscuchando || pregunto) && (NATIVO || (config.sinPitidos && detectorListo))){
       seguimiento = true; estado.textContent = '🎤 ¿Algo más?'; escuchar(); return;
     }
-    if (config.manosLibres && config.seguirEscuchando){
+    if (config.manosLibres && (config.seguirEscuchando || pregunto)){
       esperandoOrden = Date.now() + 9000;
       estado.textContent = '🎤 ¿Algo más? (podés seguir sin decir «' + config.palabra + '»)';
       setTimeout(() => { if (esperandoOrden && Date.now() >= esperandoOrden){ esperandoOrden = 0; textoEnReposo(); } }, 9200);
