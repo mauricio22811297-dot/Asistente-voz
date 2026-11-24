@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v38</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v39</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -133,9 +133,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=38"></script>
-<script src="nucleo.js?v=38"></script>
-<script src="detector.js?v=38"></script>
+<script src="nativo.js?v=39"></script>
+<script src="nucleo.js?v=39"></script>
+<script src="detector.js?v=39"></script>
 <script>
 (function(){
   'use strict';
@@ -246,9 +246,13 @@
     const p = $('panel-listas');
     if (!nombres.length){ p.hidden = true; return; }
     p.hidden = false;
-    p.innerHTML = '<h2>Listas</h2>' + nombres.map(n => `<div style="margin:6px 0 2px; font-weight:700;">${esc(n)}</div>`
+    p.innerHTML = '<h2>Listas</h2>' + nombres.map(n => `<div style="margin:6px 0 2px; font-weight:700; display:flex; justify-content:space-between; align-items:center;">${esc(n)}<button type="button" class="secundario" data-borrar-lista="${esc(n)}" style="padding:4px 10px;">🗑️ Borrar</button></div>`
       + todas[n].map((t, i) => `<div class="fila"><span>${i + 1}. ${esc(t)}</span></div>`).join('')).join('');
   }
+  $('panel-listas').addEventListener('click', e => {
+    const b = e.target.closest('[data-borrar-lista]'); if (!b) return;
+    if (confirm('¿Borrar la lista «' + b.dataset.borrarLista + '»?')){ listas.vaciar(b.dataset.borrarLista); pintarListas(); }
+  });
   pintarListas();
 
   // ------------------------------------------------ cerebro
