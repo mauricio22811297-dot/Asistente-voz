@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v42</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v43</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -95,7 +95,7 @@
     <label class="campo" for="a-tomtom">Clave de TomTom (tránsito en vivo, gratis)</label>
     <input type="password" id="a-tomtom" autocomplete="off" placeholder="Se saca gratis en developer.tomtom.com">
     <p class="ayuda">Para preguntar «¿cómo está la Panamericana?» o «¿cuánto tardo a Pilar?».</p>
-    <div class="opcion"><input type="checkbox" id="a-avisos" checked><label for="a-avisos">Avisar en voz alta las transferencias que entran</label></div>
+    <div class="opcion"><input type="checkbox" id="a-avisos" checked><label for="a-avisos">Avisar en voz alta las transferencias que entran y las alertas del Servicio Meteorológico</label></div>
     <label class="campo" for="a-palabra">Palabra para activarlo (manos libres)</label>
     <input type="text" id="a-palabra" autocomplete="off" placeholder="Morsis">
     <p class="ayuda">En la app conviene una palabra que el detector conozca, como <b>Moisés</b>: la reconoce mucho mejor y casi no se confunde. Arriba, en el aviso de Morsis, dice si la conoce («modo estricto»).</p>
@@ -137,9 +137,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=42"></script>
-<script src="nucleo.js?v=42"></script>
-<script src="detector.js?v=42"></script>
+<script src="nativo.js?v=43"></script>
+<script src="nucleo.js?v=43"></script>
+<script src="detector.js?v=43"></script>
 <script>
 (function(){
   'use strict';
@@ -304,10 +304,19 @@
     String(t || '').split(/[,;\n]+/).forEach(par => { const m = par.match(/(\d+)\s*(?:cuotas?)?\s*[:=-]?\s*(\d+(?:[.,]\d+)?)\s*%?/i); if (m && Number(m[1]) > 1) r[Number(m[1])] = Number(m[2].replace(',', '.')); });
     return r;
   }
+  // Tiempo y alertas oficiales del SMN: los trae el sistema (el SMN no deja leerlos directo desde el celular)
+  async function pedirSMN(lat, lon){
+    if (!config.codigo || !config.sistema) return null;
+    const r = await fetch(`${config.sistema}/api/morsis/clima?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+      { headers: { Authorization: 'Bearer ' + config.codigo }, signal: AbortSignal.timeout(9000) });
+    if (!r.ok) throw new Error('smn ' + r.status);
+    return r.json();
+  }
   const herramientas = N.crearHerramientas({
     ahora: () => new Date(),
     pedirJSON: async url => { const r = await fetch(url, { signal: AbortSignal.timeout(10000) }); if (!r.ok) throw new Error('http ' + r.status); return r.json(); },
     tomtom: () => config.tomtom,
+    smn: pedirSMN,
     posicion: () => new Promise(ok => { if (!navigator.geolocation) return ok(null); navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lon: p.coords.longitude }), () => ok(null), { timeout: 5000, maximumAge: 300000 }); }),
     listas, config: { get lat(){ return config.lat; }, get lon(){ return config.lon; }, get lugar(){ return config.lugar; }, get cuotas(){ return leerCuotas(config.cuotas); } },
     temporizadores: {
@@ -763,7 +772,7 @@
     if (!pendientesDeDecir.length || ocupado || rec) return;
     const texto = pendientesDeDecir.splice(0).join(' ');
     ocupado = true; detenerFondo();
-    mensaje('ia', '💸 ' + texto); pitido();
+    mensaje('ia', (/^Atención: el Servicio/.test(texto) ? '⛈️ ' : '💸 ') + texto); pitido();
     await decir(texto);
     ocupado = false; textoEnReposo(); iniciarFondo();
   }
@@ -772,6 +781,21 @@
     try{ (await avisos.revisar()).forEach(f => pendientesDeDecir.push(f)); }catch(_){}
     decirAvisos();
   }, 20000);
+
+  // ------------------------------------------------ alertas del SMN (cada 30 minutos, cada alerta se avisa una sola vez)
+  async function revisarAlertasSMN(){
+    if (config.avisos === false || !config.codigo || typeof config.lat !== 'number') return;
+    let s; try{ s = await pedirSMN(config.lat, config.lon); }catch(_){ return; }
+    if (!s || !Array.isArray(s.alertas)) return;
+    let vistas = []; try{ vistas = JSON.parse(localStorage.getItem('morsis-alertas-vistas') || '[]'); }catch(_){}
+    const nuevas = s.alertas.filter(a => !vistas.includes(a.id));
+    if (!nuevas.length) return;
+    pendientesDeDecir.push('Atención: el Servicio Meteorológico avisa ' + nuevas.map(a => N.textoAlerta(a, Date.now())).join('; y ') + '.');
+    try{ localStorage.setItem('morsis-alertas-vistas', JSON.stringify(vistas.concat(nuevas.map(a => a.id)).slice(-50))); }catch(_){}
+    decirAvisos();
+  }
+  setTimeout(revisarAlertasSMN, 15000);
+  setInterval(revisarAlertasSMN, 30 * 60 * 1000);
 
   // ------------------------------------------------ app instalable
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

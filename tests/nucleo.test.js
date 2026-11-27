@@ -364,3 +364,22 @@ test('foto: la IA dice qué es y se busca el precio en la ferretería', async ()
   assert.equal(cuerpos[0].contents[0].parts[0].inline_data.data, 'QUJD');
   assert.deepEqual(preguntas, ['cuánto sale cupla fusion 3/4']);
 });
+
+test('clima: suma datos y alertas oficiales del SMN', async () => {
+  const N = require('../nucleo.js');
+  const ahora = new Date('2026-11-27T14:00:00-03:00');
+  const om = { current: { temperature_2m: 25, weather_code: 2 }, daily: { weather_code: [95, 1], temperature_2m_min: [18, 17], temperature_2m_max: [30, 26], precipitation_probability_max: [70, 10] } };
+  const smn = async () => ({ actual: { temperatura: 27, sensacion_termica: 31, humedad: 60, estado: 'parcialmente nublado', estacion: 'El Palomar' },
+    alertas: [{ id: 'x', evento: 'Tormentas', nivel: 'naranja', desde: '2026-11-27T15:00:00-03:00', hasta: '2026-11-27T20:59:59-03:00' }] });
+  const base = { ahora: () => ahora, pedirJSON: async () => om, listas: N.crearListas({}), temporizadores: { poner() {}, cancelarTodos() { return 0; } }, config: { lat: -34.6, lon: -58.6, lugar: 'Hurlingham' } };
+  const clima = N.crearHerramientas(Object.assign({ smn }, base)).find(h => h.nombre === 'clima');
+  const r = await clima.ejecutar({});
+  assert.strictEqual(r.ahora.temperatura, 27);
+  assert.deepStrictEqual(r.alertas, ['alerta naranja por tormentas, hoy de 15 a 21']);
+  // Sin vínculo con el sistema sigue andando como antes
+  const solo = await N.crearHerramientas(base).find(h => h.nombre === 'clima').ejecutar({});
+  assert.strictEqual(solo.ahora.temperatura, 25);
+  assert.strictEqual(solo.alertas, undefined);
+  assert.strictEqual(N.textoAlerta({ evento: 'Viento', nivel: 'amarilla', desde: '2026-11-27T09:00:00-03:00', hasta: '2026-11-28T05:59:59-03:00' }, +ahora), 'alerta amarilla por viento, ahora y hasta las 6 de mañana');
+  assert.strictEqual(N.textoAlerta({ evento: 'Lluvias', nivel: 'amarilla', desde: '2026-11-28T09:00:00-03:00', hasta: '2026-11-28T21:00:00-03:00' }, +ahora), 'alerta amarilla por lluvias, mañana de 9 a 21');
+});

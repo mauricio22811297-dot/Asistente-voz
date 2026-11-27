@@ -60,6 +60,25 @@
     };
   }
 
+  // ---------------------------------------------------------------- alertas del SMN
+  /** "alerta naranja por tormentas, hoy de 15 a 21 hs" (horas en Argentina). */
+  function textoAlerta(a, ahoraMs) {
+    const dia = ms => new Intl.DateTimeFormat('en-CA', { timeZone: ZONA, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+    const hora = ms => Number(new Intl.DateTimeFormat('es-AR', { timeZone: ZONA, hour: 'numeric', hour12: false }).format(new Date(ms))) % 24;
+    const cuando = ms => { const d = dia(ms), h = dia(ahoraMs), m = dia(ahoraMs + 864e5);
+      return d === h ? 'hoy' : d === m ? 'mañana' : new Intl.DateTimeFormat('es-AR', { timeZone: ZONA, weekday: 'long' }).format(new Date(ms)); };
+    const desde = Date.parse(a.desde), hasta = Date.parse(a.hasta);
+    let t = `alerta ${a.nivel || 'amarilla'} por ${String(a.evento || 'mal tiempo').toLowerCase()}`;
+    if (Number.isFinite(desde) && Number.isFinite(hasta)) {
+      const yaEmpezo = desde <= ahoraMs;
+      const finH = hora(hasta + 1000);
+      if (yaEmpezo) t += `, ahora y hasta las ${finH}${cuando(hasta) === 'hoy' ? '' : ' de ' + cuando(hasta)}`;
+      else if (cuando(desde) === cuando(hasta)) t += `, ${cuando(desde)} de ${hora(desde)} a ${finH}`;
+      else t += `, desde ${cuando(desde)} a las ${hora(desde)}`;
+    }
+    return t;
+  }
+
   // ---------------------------------------------------------------- herramientas
   /**
    * contexto: { ahora(), pedirJSON(url), listas, temporizadores: { poner(seg, motivo), cancelarTodos() }, config: { lugar, lat, lon }, conectores: [] }
@@ -205,7 +224,7 @@
       {
         nombre: 'clima',
         declaracion: {
-          name: 'clima', description: 'Clima actual y de hoy y mañana. Sin parámetros usa el lugar configurado; con "ciudad" busca esa ciudad.',
+          name: 'clima', description: 'Clima actual, de hoy y mañana, y las ALERTAS oficiales del Servicio Meteorológico Nacional (SMN) para ese lugar. Sin parámetros usa el lugar configurado; con "ciudad" busca esa ciudad. Si trae alertas, decilas primero.',
           parameters: { type: 'object', properties: { ciudad: { type: 'string', description: 'Ciudad (opcional). Ej: "Mar del Plata".' } } }
         },
         ejecutar: async args => {
@@ -220,9 +239,19 @@
           if (typeof lat !== 'number' || typeof lon !== 'number') return { error: 'Falta configurar el lugar en Ajustes.' };
           const j = await pedirJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`
             + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=2').catch(() => null);
-          if (!j || !j.daily || !j.current) return { error: 'No pude consultar el clima ahora.' };
+          // Datos oficiales del SMN (estación cercana y alertas), si Morsis está vinculado al sistema
+          const oficial = contexto.smn ? contexto.smn(lat, lon).catch(() => null) : Promise.resolve(null);
+          if (!j || !j.daily || !j.current) {
+            const s = await oficial;
+            if (s && s.actual) return { lugar: lugar || 'el lugar configurado', fuente: 'SMN', ahora: s.actual, alertas: (s.alertas || []).map(a => textoAlerta(a, +ahora())) };
+            return { error: 'No pude consultar el clima ahora.' };
+          }
           const dia = i => estado({ weather_code: j.daily.weather_code[i], min: j.daily.temperature_2m_min[i], max: j.daily.temperature_2m_max[i], lluvia: j.daily.precipitation_probability_max[i] });
-          return { lugar: lugar || 'el lugar configurado', ahora: { temperatura: Math.round(j.current.temperature_2m), estado: CLIMA_TEXTO[j.current.weather_code] || 'variable' }, hoy: dia(0), manana: dia(1) };
+          const r = { lugar: lugar || 'el lugar configurado', ahora: { temperatura: Math.round(j.current.temperature_2m), estado: CLIMA_TEXTO[j.current.weather_code] || 'variable' }, hoy: dia(0), manana: dia(1) };
+          const s = await oficial;
+          if (s && s.actual) { r.ahora = Object.assign({}, r.ahora, { temperatura: s.actual.temperatura, sensacion_termica: s.actual.sensacion_termica, humedad: s.actual.humedad, estacion_smn: s.actual.estacion }); if (s.actual.estado) r.ahora.estado = s.actual.estado; }
+          if (s && Array.isArray(s.alertas)) r.alertas = s.alertas.map(a => textoAlerta(a, +ahora()));
+          return r;
         }
       },
       {
@@ -437,14 +466,18 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
       const r = await h('cancelar_temporizadores').ejecutar();
       return { texto: r.cancelados ? 'Listo, cancelé los temporizadores.' : 'No había temporizadores en marcha.' };
     }
-    if (/\b(clima|temperatura|cuantos grados|hace frio|hace calor|va a llover|llueve|pronostico)\b/.test(t)) {
+    if (/\b(clima|temperatura|cuantos grados|hace frio|hace calor|va a llover|llueve|pronostico|alertas?|tormentas?|granizo)\b/.test(t)) {
       const ciudad = (t.match(/\ben ([a-zñ ]{3,40})$/) || [])[1];
       const r = await h('clima').ejecutar(ciudad && !/^(este|esta|la|el)\b/.test(ciudad) ? { ciudad } : {});
       if (r.error) return { texto: r.error };
+      const aviso = r.alertas && r.alertas.length ? `Atención: el Servicio Meteorológico tiene ${r.alertas.join('; y ')}. ` : '';
+      if (/\balertas?\b/.test(t) && r.alertas) return { texto: aviso.trim() || `No hay alertas del Servicio Meteorológico para ${r.lugar}.` };
+      if (!r.hoy) return { texto: aviso + `En ${r.lugar} hace ${r.ahora.temperatura} grados${r.ahora.estado ? ', ' + r.ahora.estado : ''}.` };
       const lluvia = r.hoy.probabilidad_de_lluvia_porcentaje;
       const deManana = /\bmanana\b/.test(t);
-      if (deManana) return { texto: `Mañana en ${r.lugar}: ${r.manana.estado}, entre ${r.manana.minima} y ${r.manana.maxima} grados, con ${r.manana.probabilidad_de_lluvia_porcentaje}% de probabilidad de lluvia.` };
-      return { texto: `En ${r.lugar} hace ${r.ahora.temperatura} grados, ${r.ahora.estado}. Hoy, entre ${r.hoy.minima} y ${r.hoy.maxima}`
+      if (deManana) return { texto: aviso + `Mañana en ${r.lugar}: ${r.manana.estado}, entre ${r.manana.minima} y ${r.manana.maxima} grados, con ${r.manana.probabilidad_de_lluvia_porcentaje}% de probabilidad de lluvia.` };
+      const sens = typeof r.ahora.sensacion_termica === 'number' && Math.abs(r.ahora.sensacion_termica - r.ahora.temperatura) >= 3 ? ` (sensación de ${r.ahora.sensacion_termica})` : '';
+      return { texto: aviso + `En ${r.lugar} hace ${r.ahora.temperatura} grados${sens}, ${r.ahora.estado}. Hoy, entre ${r.hoy.minima} y ${r.hoy.maxima}`
         + (lluvia >= 30 ? `, con ${lluvia}% de probabilidad de lluvia.` : ', sin lluvia a la vista.') };
     }
     const lugar = (texto.match(/(?:c[oó]mo (?:llego|voy|ir) (?:a|al|hasta)|d[oó]nde queda|llevame (?:a|al)|ruta (?:a|al|hasta)|direcci[oó]n (?:a|al|para ir a))\s+(.+)$/i) || [])[1];
@@ -750,5 +783,5 @@ Si no se ve un producto o no estás seguro, poné seguro: false y en que_es dec�
     return { responder, responderFoto, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { crearHerramientasTransito, crearBuscadorWeb, normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { textoAlerta, crearHerramientasTransito, crearBuscadorWeb, normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });
