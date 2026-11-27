@@ -79,6 +79,36 @@
     return t;
   }
 
+  // ---------------------------------------------------------------- ríos (INA / Prefectura)
+  const sinT = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const metros = v => String(Math.round(v * 100) / 100).replace('.', ',') + ' metros';
+  /** "En Tigre, el río Luján está en 2,7 metros, subió 30 centímetros. Está en alerta (la alerta es a 2,5)." */
+  function textoRio(r) {
+    let t = `En ${r.estacion}, el ${r.rio} está en ${metros(r.altura)}`;
+    if (typeof r.variacion === 'number') {
+      const cm = Math.round(Math.abs(r.variacion) * 100);
+      t += cm < 3 ? ', sin cambios' : `, ${r.variacion > 0 ? 'subió' : 'bajó'} ${cm} centímetros`;
+    }
+    if (r.estado === 'evacuación') t += `. ¡Está en nivel de evacuación! (es a ${metros(r.evacuacion)})`;
+    else if (r.estado === 'alerta') t += `. Está en alerta (la alerta es a ${metros(r.alerta)})`;
+    else if (r.estado === 'aguas bajas') t += '. Está en aguas bajas';
+    else if (typeof r.alerta === 'number') t += `. Normal; la alerta es a ${metros(r.alerta)}`;
+    return t + '.';
+  }
+  /** Busca en la pregunta una estación o un río; si no hay, resume la provincia. */
+  function respuestaRios(pregunta, rios) {
+    const q = sinT(pregunta);
+    const q2 = q.replace(/rio de la plata/g, ' ').replace(/(provincia|pcia) de buenos aires/g, ' ');
+    const porEstacion = rios.filter(r => new RegExp('\\b' + sinT(r.estacion).split(',')[0].trim() + '\\b').test(q2));
+    if (porEstacion.length) return porEstacion.slice(0, 2).map(textoRio).join(' ');
+    const porRio = rios.filter(r => { const n = sinT(r.rio).replace(/^(rio|arroyo( del)?) /, ''); return new RegExp('\\b' + n + '\\b').test(q); });
+    if (porRio.length) return porRio.slice(0, 3).map(textoRio).join(' ');
+    const mal = rios.filter(r => r.estado === 'alerta' || r.estado === 'evacuación');
+    if (mal.length) return `Atención: ${mal.length === 1 ? 'hay una estación' : 'hay ' + mal.length + ' estaciones'} con el agua alta. ` + mal.slice(0, 4).map(textoRio).join(' ');
+    const ej = rios.find(r => r.estacion === 'San Isidro') || rios[0];
+    return `Los ríos de la provincia están normales, ninguno en alerta. ${ej ? textoRio(ej) : ''}`.trim();
+  }
+
   // ---------------------------------------------------------------- herramientas
   /**
    * contexto: { ahora(), pedirJSON(url), listas, temporizadores: { poner(seg, motivo), cancelarTodos() }, config: { lugar, lat, lon }, conectores: [] }
@@ -254,6 +284,15 @@
           return r;
         }
       },
+      ...(contexto.rios ? [{
+        nombre: 'rios',
+        declaracion: { name: 'rios', description: 'Altura del agua en los ríos y arroyos de la provincia de Buenos Aires (río de la Plata, Luján, Paraná de las Palmas, Paraná, Salado…), con estado normal / alerta / evacuación (datos del INA y Prefectura). No lleva parámetros.' },
+        ejecutar: async () => {
+          const r = await contexto.rios().catch(() => null);
+          if (!r || !Array.isArray(r.rios)) return { error: 'No pude consultar los ríos ahora. Para eso Morsis tiene que estar vinculado al sistema.' };
+          return { fuente: r.fuente, estaciones: r.rios };
+        }
+      }] : []),
       {
         nombre: 'poner_temporizador',
         declaracion: {
@@ -465,6 +504,15 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     if (/\b(cancela|cancelar|saca|sacar|borra|borrar|frena|apaga|detene)\b.*\b(temporizador|temporizadores|alarma|timer)/.test(t)) {
       const r = await h('cancelar_temporizadores').ejecutar();
       return { texto: r.cancelados ? 'Listo, cancelé los temporizadores.' : 'No había temporizadores en marcha.' };
+    }
+    const hr = h('rios');
+    // Seguimiento: dentro de los 2 minutos de una consulta de ríos, "¿y el Luján en Tigre?" también va acá
+    const sigueRios = hr && hr.ultima && Date.now() - hr.ultima.cuando < 120000 && hr.ultima.nombres.some(n => new RegExp('\\b' + n + '\\b').test(t));
+    if (hr && (sigueRios || /\b(rios?|arroyos?|crecidas?|sudestada|inundaciones?|altura del agua)\b/.test(t)) && !/\b(rio negro|rio cuarto|rio gallegos|rio tercero|rio grande)\b/.test(t)) {
+      const r = await hr.ejecutar();
+      if (r.error) return { texto: r.error };
+      hr.ultima = { cuando: Date.now(), nombres: [...new Set(r.estaciones.flatMap(e => [sinT(e.estacion).split(',')[0].trim(), sinT(e.rio).replace(/^(rio|arroyo( del)?) /, '')]))].filter(n => n.length > 3) };
+      return { texto: respuestaRios(texto, r.estaciones) };
     }
     if (/\b(clima|temperatura|cuantos grados|hace frio|hace calor|va a llover|llueve|pronostico|alertas?|tormentas?|granizo)\b/.test(t)) {
       const ciudad = (t.match(/\ben ([a-zñ ]{3,40})$/) || [])[1];
@@ -783,5 +831,5 @@ Si no se ve un producto o no estás seguro, poné seguro: false y en que_es dec�
     return { responder, responderFoto, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { textoAlerta, crearHerramientasTransito, crearBuscadorWeb, normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { textoAlerta, textoRio, respuestaRios, crearHerramientasTransito, crearBuscadorWeb, normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });

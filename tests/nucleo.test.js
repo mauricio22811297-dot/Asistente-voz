@@ -383,3 +383,12 @@ test('clima: suma datos y alertas oficiales del SMN', async () => {
   assert.strictEqual(N.textoAlerta({ evento: 'Viento', nivel: 'amarilla', desde: '2026-11-27T09:00:00-03:00', hasta: '2026-11-28T05:59:59-03:00' }, +ahora), 'alerta amarilla por viento, ahora y hasta las 6 de mañana');
   assert.strictEqual(N.textoAlerta({ evento: 'Lluvias', nivel: 'amarilla', desde: '2026-11-28T09:00:00-03:00', hasta: '2026-11-28T21:00:00-03:00' }, +ahora), 'alerta amarilla por lluvias, mañana de 9 a 21');
 });
+
+test('ríos: resumen, por estación y por río', async () => {
+  const N = require('../nucleo.js');
+  const rios = [{ estacion: 'San Isidro', rio: 'río de la Plata', altura: 1.6, variacion: 0.35, estado: 'normal', alerta: 3 },
+    { estacion: 'Tigre', rio: 'río Luján', altura: 2.7, variacion: 0.3, estado: 'alerta', alerta: 2.5 }];
+  assert.match(N.respuestaRios('cómo están los ríos', rios), /^Atención: hay una estación con el agua alta\. En Tigre, el río Luján está en 2,7 metros, subió 30 centímetros\. Está en alerta/);
+  assert.match(N.respuestaRios('cómo está el río de la Plata', rios), /^En San Isidro, el río de la Plata está en 1,6 metros/);
+  assert.match(N.respuestaRios('los ríos de la provincia de Buenos Aires', [rios[0]]), /^Los ríos de la provincia están normales/);
+});
