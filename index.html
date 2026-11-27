@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v44</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v45</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -65,7 +65,7 @@
   <div id="estado" role="status">Tocá el micrófono para hablar</div>
   <button id="btn-modo" class="modo">👂 Manos libres</button>
   <div id="oido" class="ejemplos" style="min-height:18px;"></div>
-  <div class="ejemplos">Decí «Morsis» y después: «cuánto sale el codo de fusión de tres cuartos», «qué hora es», «cómo está el clima», «cómo están los ríos», «poné un temporizador de 10 minutos», «sumá 3 codos de tres cuartos al ticket», «contame un chiste».</div>
+  <div class="ejemplos">Decí «Morsis» y después: «cuánto sale el codo de fusión de tres cuartos», «qué hora es», «cómo está el clima», «cómo están los ríos», «cómo está para pescar mañana en San Pedro», «poné un temporizador de 10 minutos», «sumá 3 codos de tres cuartos al ticket», «contame un chiste».</div>
 
   <div class="panel" id="panel-temporizadores" hidden></div>
   <div class="panel" id="panel-listas" hidden></div>
@@ -137,9 +137,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=44"></script>
-<script src="nucleo.js?v=44"></script>
-<script src="detector.js?v=44"></script>
+<script src="nativo.js?v=45"></script>
+<script src="nucleo.js?v=45"></script>
+<script src="detector.js?v=45"></script>
 <script>
 (function(){
   'use strict';
@@ -343,7 +343,7 @@
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
     alAvisar: paso => {
       const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
-        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…' };
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…', 'herramienta:pesca': '🎣 Mirando cómo está para pescar…' };
       estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
     } });
 

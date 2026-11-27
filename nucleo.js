@@ -109,6 +109,28 @@
     return `Los ríos de la provincia están normales, ninguno en alerta. ${ej ? textoRio(ej) : ''}`.trim();
   }
 
+  // ---------------------------------------------------------------- pesca
+  const MES_LUNAR = 29.530588853;
+  /** Edad de la luna en días (0 = luna nueva) para un instante. */
+  const edadLuna = ms => (((ms - Date.UTC(2000, 0, 6, 18, 14)) / 864e5) % MES_LUNAR + MES_LUNAR) % MES_LUNAR;
+  function faseLuna(edad) {
+    const f = edad / MES_LUNAR;
+    const nombre = f < 0.034 || f > 0.966 ? 'luna nueva' : f < 0.216 ? 'luna creciente' : f < 0.284 ? 'cuarto creciente' : f < 0.466 ? 'luna creciente gibosa'
+      : f < 0.534 ? 'luna llena' : f < 0.716 ? 'luna menguante gibosa' : f < 0.784 ? 'cuarto menguante' : 'luna menguante';
+    return { nombre, cerca_llena_o_nueva: f < 0.1 || f > 0.9 || Math.abs(f - 0.5) < 0.1, iluminada: Math.round((1 - Math.cos(2 * Math.PI * f)) * 50) };
+  }
+  const horaTexto = h => { const m = Math.round((((h % 24) + 24) % 24) * 60) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  /** Horarios "solunares" aproximados (±1 h): mayores = luna arriba y abajo (2 h); menores = salida y puesta (1 h). */
+  function horariosSolunares(edad) {
+    const paso = 24.84 * edad / MES_LUNAR;          // la luna pasa por arriba ~50 min más tarde cada día
+    const arriba = (12 + paso) % 24, abajo = (arriba + 12.42) % 24;
+    const mayores = [arriba, abajo].sort((a, b) => a - b).map(c => `${horaTexto(c - 1)} a ${horaTexto(c + 1)}`);
+    const menores = [(arriba + 18.63) % 24, (arriba + 6.21) % 24].sort((a, b) => a - b).map(c => `${horaTexto(c - 0.5)} a ${horaTexto(c + 0.5)}`);
+    return { mayores, menores };
+  }
+  const RUMBOS = ['norte', 'noreste', 'este', 'sudeste', 'sur', 'sudoeste', 'oeste', 'noroeste'];
+  const rumbo = g => RUMBOS[Math.round(((g % 360) + 360) % 360 / 45) % 8];
+
   // ---------------------------------------------------------------- herramientas
   /**
    * contexto: { ahora(), pedirJSON(url), listas, temporizadores: { poner(seg, motivo), cancelarTodos() }, config: { lugar, lat, lon }, conectores: [] }
@@ -282,6 +304,68 @@
           if (s && s.actual) { r.ahora = Object.assign({}, r.ahora, { temperatura: s.actual.temperatura, sensacion_termica: s.actual.sensacion_termica, humedad: s.actual.humedad, estacion_smn: s.actual.estacion }); if (s.actual.estado) r.ahora.estado = s.actual.estado; }
           if (s && Array.isArray(s.alertas)) r.alertas = s.alertas.map(a => textoAlerta(a, +ahora()));
           return r;
+        }
+      },
+      {
+        nombre: 'pesca',
+        declaracion: {
+          name: 'pesca', description: 'Pronóstico de pesca para un día y lugar: fase de la luna, horarios de pique (tablas solunares), viento, presión (si sube o baja), lluvia y, si hay, la altura del río. dia: 0 = hoy, 1 = mañana… (hasta 6). Sin lugar usa el configurado.',
+          parameters: { type: 'object', properties: { lugar: { type: 'string', description: 'Lugar de pesca. Ej: "San Pedro", "Punta Lara".' }, dia: { type: 'number', description: '0 hoy, 1 mañana, 2 pasado… máximo 6.' } } }
+        },
+        ejecutar: async args => {
+          let { lat, lon, lugar } = config;
+          const pedido = String((args && args.lugar) || '').trim().slice(0, 60);
+          if (pedido) {
+            const g = await pedirJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(pedido)}&count=5&language=es&countryCode=AR`).catch(() => null);
+            const r = g && g.results && (g.results.find(x => /buenos aires/i.test(x.admin1 || '')) || g.results[0]);
+            if (!r) return { error: `No encontré el lugar "${pedido}".` };
+            lat = r.latitude; lon = r.longitude; lugar = r.name;
+          }
+          if (typeof lat !== 'number' || typeof lon !== 'number') return { error: 'Falta configurar el lugar en Ajustes.' };
+          const dia = Math.max(0, Math.min(6, Math.round(Number(args && args.dia) || 0)));
+          const j = await pedirJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+            + '&hourly=pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,precipitation_sum,weather_code'
+            + `&timezone=${encodeURIComponent(ZONA)}&past_days=1&forecast_days=${dia + 1}`).catch(() => null);
+          if (!j || !j.hourly || !j.daily) return { error: 'No pude consultar el pronóstico ahora.' };
+          const H = j.hourly, D = j.daily, d = D.time.length - 1;    // el día pedido es el último
+          const fecha = D.time[d];
+          const idx = h => H.time.indexOf(`${fecha}T${String(h).padStart(2, '0')}:00`);
+          const horas = [];
+          for (let h = 6; h <= 20; h++) { const i = idx(h); if (i >= 0) horas.push(i); }
+          if (!horas.length) return { error: 'No hay pronóstico para ese día.' };
+          const prom = k => horas.reduce((a, i) => a + (H[k][i] || 0), 0) / horas.length;
+          const viento = Math.round(prom('wind_speed_10m')), rafagas = Math.round(Math.max(...horas.map(i => H.wind_gusts_10m[i] || 0)));
+          const dirs = horas.map(i => H.wind_direction_10m[i]); // dirección promedio (vectorial)
+          const dir = Math.atan2(dirs.reduce((a, g) => a + Math.sin(g * Math.PI / 180), 0), dirs.reduce((a, g) => a + Math.cos(g * Math.PI / 180), 0)) * 180 / Math.PI;
+          const i0 = idx(6), iAntes = i0 - 24, iFin = idx(18);
+          const pAntes = iAntes >= 0 ? H.pressure_msl[iAntes] : null, pMan = H.pressure_msl[i0], pTarde = iFin >= 0 ? H.pressure_msl[iFin] : pMan;
+          const cambio = pAntes !== null ? pMan - pAntes : pTarde - pMan;
+          const presion = cambio <= -3 ? 'bajando rápido' : cambio <= -1 ? 'bajando de a poco' : cambio >= 3 ? 'subiendo rápido' : cambio >= 1 ? 'subiendo' : 'estable';
+          const mediodia = Date.parse(fecha + 'T12:00:00-03:00');
+          const edad = edadLuna(mediodia), luna = faseLuna(edad);
+          const lluvia = D.precipitation_sum[d] || 0, probLluvia = D.precipitation_probability_max[d];
+          // Puntaje: luna llena/nueva, poco viento, presión que baja de a poco → mejor pique (lo que dicen los pescadores)
+          let p = 0;
+          if (luna.cerca_llena_o_nueva) p += 1;
+          if (viento < 15) p += 1; else if (viento > 28 || rafagas > 50) p -= 2; else if (viento > 20) p -= 1;
+          if (rumbo(dir) === 'sudeste' && viento > 20) p -= 1;
+          if (presion === 'bajando de a poco' || presion === 'estable') p += 1; else if (presion === 'subiendo rápido' || presion === 'bajando rápido') p -= 1;
+          if (lluvia > 15) p -= 1;
+          const pronostico = p >= 2 ? 'pinta bien' : p >= 0 ? 'regular' : 'pinta mal';
+          let rio = null;
+          if (contexto.rios) {
+            const r = await contexto.rios().catch(() => null);
+            const n = sinTildes(lugar);
+            const e = r && Array.isArray(r.rios) && r.rios.find(x => n.includes(sinTildes(x.estacion).split(',')[0]) || sinTildes(x.estacion).split(',')[0].includes(n));
+            if (e) rio = { estacion: e.estacion, rio: e.rio, altura: e.altura, variacion: e.variacion, estado: e.estado };
+          }
+          return {
+            lugar: lugar || 'el lugar configurado', dia: dia === 0 ? 'hoy' : dia === 1 ? 'mañana' : new Intl.DateTimeFormat('es-AR', { timeZone: ZONA, weekday: 'long' }).format(new Date(mediodia)),
+            pronostico, luna: luna.nombre, horarios_de_pique: horariosSolunares(edad),
+            viento: { promedio_kmh: viento, rafagas_kmh: rafagas, desde: rumbo(dir) }, presion,
+            lluvia: { probabilidad: probLluvia, mm: Math.round(lluvia) }, temperatura: { minima: Math.round(D.temperature_2m_min[d]), maxima: Math.round(D.temperature_2m_max[d]) },
+            rio, aclaracion: 'Es una estimación con luna, viento y presión; no es un parte de pique real.'
+          };
         }
       },
       ...(contexto.rios ? [{
@@ -504,6 +588,22 @@ Si algo no se entendió o es ambiguo, preguntá en una frase corta.`;
     if (/\b(cancela|cancelar|saca|sacar|borra|borrar|frena|apaga|detene)\b.*\b(temporizador|temporizadores|alarma|timer)/.test(t)) {
       const r = await h('cancelar_temporizadores').ejecutar();
       return { texto: r.cancelados ? 'Listo, cancelé los temporizadores.' : 'No había temporizadores en marcha.' };
+    }
+    if (/\b(pesca|pescar|pesque|pique|piques|pican|pica el|picando)\b/.test(t) && h('pesca')) {
+      const lugar = (t.match(/\ben (?:el |la )?([a-zñ ]{3,40}?)(?: (?:hoy|manana|pasado|el (?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)|este (?:sabado|domingo)))?$/) || [])[1];
+      const dias = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+      const hoyN = new Date(Date.now() - 3 * 3600e3).getUTCDay();
+      let dia = /\bpasado manana\b/.test(t) ? 2 : /\bmanana\b/.test(t) ? 1 : 0;
+      const dn = dias.findIndex(x => new RegExp('\\b' + x + '\\b').test(t));
+      if (dn >= 0) dia = (dn - hoyN + 7) % 7;
+      const r = await h('pesca').ejecutar({ lugar: lugar && !/^(hoy|manana|pasado|pescar|ir)\b/.test(lugar) ? lugar : '', dia });
+      if (r.error) return { texto: r.error };
+      const hs = r.horarios_de_pique.mayores;
+      let txt = `${r.dia === 'hoy' ? 'Hoy' : r.dia === 'mañana' ? 'Mañana' : 'El ' + r.dia} en ${r.lugar} ${r.pronostico} para pescar: ${r.luna}, mejores horarios de ${hs[0]} y de ${hs[1]}`
+        + `, viento ${r.viento.desde} de ${r.viento.promedio_kmh} kilómetros por hora${r.viento.rafagas_kmh > 45 ? ` con ráfagas de ${r.viento.rafagas_kmh}` : ''}, presión ${r.presion}`;
+      if (r.lluvia.probabilidad >= 40) txt += `, ${r.lluvia.probabilidad}% de probabilidad de lluvia`;
+      if (r.rio) txt += `. ${r.rio.rio[0].toUpperCase() + r.rio.rio.slice(1)} en ${metros(r.rio.altura)}${typeof r.rio.variacion === 'number' && Math.abs(r.rio.variacion) >= 0.03 ? (r.rio.variacion > 0 ? ', subiendo' : ', bajando') : ', estable'}`;
+      return { texto: txt + '.' };
     }
     const hr = h('rios');
     // Seguimiento: dentro de los 2 minutos de una consulta de ríos, "¿y el Luján en Tigre?" también va acá
@@ -831,5 +931,5 @@ Si no se ve un producto o no estás seguro, poné seguro: false y en que_es dec�
     return { responder, responderFoto, olvidar: () => { memoria = { turnos: [], hasta: 0 }; } };
   }
 
-  return { textoAlerta, textoRio, respuestaRios, crearHerramientasTransito, crearBuscadorWeb, normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
+  return { textoAlerta, textoRio, edadLuna, faseLuna, horariosSolunares, respuestaRios, crearHerramientasTransito, crearBuscadorWeb, normalizarCodigos, crearAvisos, quedaIncompleta, crearListas, crearHerramientas, crearCerebro, crearConectorFerreteria, esDelNegocio, detectarActivacion, respuestaRapida, duracionEnSegundos, llamarGemini, instrucciones, MENSAJES, ZONA, MODELOS };
 });

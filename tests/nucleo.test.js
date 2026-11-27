@@ -392,3 +392,13 @@ test('ríos: resumen, por estación y por río', async () => {
   assert.match(N.respuestaRios('cómo está el río de la Plata', rios), /^En San Isidro, el río de la Plata está en 1,6 metros/);
   assert.match(N.respuestaRios('los ríos de la provincia de Buenos Aires', [rios[0]]), /^Los ríos de la provincia están normales/);
 });
+
+test('pesca: luna y horarios de pique', () => {
+  const N = require('../nucleo.js');
+  const llena = N.edadLuna(Date.UTC(2026, 10, 24, 15));
+  assert.strictEqual(N.faseLuna(llena).nombre, 'luna llena');
+  assert.strictEqual(N.faseLuna(N.edadLuna(Date.UTC(2026, 11, 9, 0))).nombre, 'luna nueva');
+  const hs = N.horariosSolunares(llena);
+  assert.strictEqual(hs.mayores.length, 2);
+  assert.match(hs.mayores.join(' '), /^\d\d:\d\d a \d\d:\d\d \d\d:\d\d a \d\d:\d\d$/);
+});
