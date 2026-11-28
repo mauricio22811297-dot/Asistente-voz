@@ -67,6 +67,7 @@ class ServicioPalabra : Service(), RecognitionListener {
     private var umbralVoz = 0.0
     private var grabandoHasta = 0L
     private var detectorVoz: DetectorVozPropia? = null
+    @Volatile private var escuchaDesde = 0L   // cuándo arrancó el micrófono (lo primero suele ser el pitido de fin del dictado)
     // «Solo mi voz» (ver VozDueno): huella de la persona con el modelo de voces de Vosk
     private var modeloVoces: SpeakerModel? = null
     private var recDueno: Recognizer? = null
@@ -210,6 +211,9 @@ class ServicioPalabra : Service(), RecognitionListener {
             return
         }
         if (!usarVozPropia() || seg < 0.25) return
+        // Lo que se oye en los primeros 2 segundos después de volver a escuchar es el pitido o el final del dictado:
+        // en el diagnóstico, varias activaciones falsas pasaban justo 1 segundo después de terminar un pedido.
+        if (System.currentTimeMillis() - escuchaDesde < 2000) { oido("🔇 ignorado (recién volvía a escuchar)", false); return }
         val huella = VozPropia.mfcc(limpio, restarMedia = false)
         // Se compara con TODAS las muestras: para despertar, lo oído tiene que parecerse a por lo menos 2
         // (un ruido o una charla a veces se parece a una sola muestra; tu «Morsis» se parece a varias).
@@ -334,6 +338,7 @@ class ServicioPalabra : Service(), RecognitionListener {
             if (detectorVoz == null) {
                 val d = DetectorVozPropia({ alPedazo(it) }, { e -> avisar("No pude escuchar: $e. Reintento…"); main.postDelayed({ detenerEscucha(); aplicar() }, 5000) })
                 detectorVoz = d
+                escuchaDesde = System.currentTimeMillis()
                 d.iniciar()
             }
             return
