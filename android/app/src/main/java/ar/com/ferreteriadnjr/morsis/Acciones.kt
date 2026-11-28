@@ -46,6 +46,18 @@ class Acciones(private val act: MainActivity) {
         return try {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             act.startActivity(i)
+            // Algunas apps (Spotify sobre todo) abren la búsqueda pero no arrancan solas: si a los 3 s no suena nada,
+            // se aprieta "play"; a los 7 s se avisa a la página si sonó o no.
+            val am = act.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
+            main.postDelayed({
+                if (!am.isMusicActive) {
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                }
+            }, 3000)
+            main.postDelayed({
+                act.puente?.emitir(JSONObject().put("tipo", "musica").put("sonando", am.isMusicActive).put("app", app?.second ?: ""))
+            }, 7000)
             JSONObject().put("ok", true).put("app", app?.second ?: "la app de música").toString()
         } catch (_: Exception) {
             JSONObject().put("error", "sin_app").toString()

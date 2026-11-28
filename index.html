@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v48</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v49</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -140,9 +140,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=48"></script>
-<script src="nucleo.js?v=48"></script>
-<script src="detector.js?v=48"></script>
+<script src="nativo.js?v=49"></script>
+<script src="nucleo.js?v=49"></script>
+<script src="detector.js?v=49"></script>
 <script>
 (function(){
   'use strict';
@@ -708,6 +708,9 @@
         $('a-grabar').textContent = ev.grabando ? '🎤 Decila ahora…' : '🔴 Grabar la palabra';
         pintarMuestras(ev.total, ev.texto);
         if (!dlg.open) $('oido').textContent = ev.texto;
+      } else if (ev.tipo === 'musica'){
+        anotar('música: ' + (ev.sonando ? 'sonando' : 'no arrancó sola') + ' en ' + ev.app);
+        if (!ev.sonando && !ocupado && !rec){ pendientesDeDecir.push(`${ev.app || 'La app de música'} abrió la búsqueda pero no arrancó sola: tocá el primer resultado.`); decirAvisos(); }
       } else if (ev.tipo === 'dueno'){
         $('a-dueno').textContent = ev.texto; anotar('solo mi voz: ' + ev.texto);
       } else if (ev.tipo === 'estado'){
