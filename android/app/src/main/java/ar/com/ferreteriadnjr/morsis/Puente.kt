@@ -54,4 +54,14 @@ class Puente(private val act: MainActivity, private val web: WebView) {
     @JavascriptInterface fun borrarMuestras() { ServicioPalabra.instancia?.borrarMuestras() ?: VozPropia.borrar(act.filesDir) }
     @JavascriptInterface fun cuantasMuestras(): Int = ServicioPalabra.instancia?.cuantasMuestras() ?: VozPropia.leer(act.filesDir).size
     @JavascriptInterface fun bateria() { main.post { act.pedirBateria(true) } }
+
+    // Cosas del celular (ver Acciones.kt). Devuelven JSON.
+    private val acciones = Acciones(act)
+    @JavascriptInterface fun musica(que: String): String = acciones.musica(que)
+    @JavascriptInterface fun media(accion: String): String = acciones.media(accion)
+    @JavascriptInterface fun contactos(nombre: String): String = acciones.contactos(nombre)
+    @JavascriptInterface fun llamar(numero: String): String = acciones.llamar(numero)
+    @JavascriptInterface fun whatsapp(numero: String, texto: String): String = acciones.whatsapp(numero, texto)
+    @JavascriptInterface fun eventos(desde: String, hasta: String): String = acciones.eventos(desde.toLong(), hasta.toLong())
+    @JavascriptInterface fun crearEvento(titulo: String, inicio: String, fin: String): String = acciones.crearEvento(titulo, inicio.toLong(), fin.toLong())
 }

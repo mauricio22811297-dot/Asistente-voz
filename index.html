@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v47</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v48</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -140,9 +140,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=47"></script>
-<script src="nucleo.js?v=47"></script>
-<script src="detector.js?v=47"></script>
+<script src="nativo.js?v=48"></script>
+<script src="nucleo.js?v=48"></script>
+<script src="detector.js?v=48"></script>
 <script>
 (function(){
   'use strict';
@@ -329,6 +329,15 @@
     pedirJSON: async url => { const r = await fetch(url, { signal: AbortSignal.timeout(10000) }); if (!r.ok) throw new Error('http ' + r.status); return r.json(); },
     tomtom: () => config.tomtom,
     smn: pedirSMN,
+    // Cosas del celular (solo en la app 1.14 o más nueva; ver Acciones.kt)
+    celular: NATIVO && typeof MorsisNativo.musica === 'function' ? (() => {
+      const j = t => { try{ return JSON.parse(t); }catch(_){ return { error: 'respuesta' }; } };
+      return {
+        musica: q => j(MorsisNativo.musica(q)), media: a => j(MorsisNativo.media(a)), contactos: n => j(MorsisNativo.contactos(n)),
+        llamar: n => j(MorsisNativo.llamar(n)), whatsapp: (n, t) => j(MorsisNativo.whatsapp(n, t)),
+        eventos: (d, h) => j(MorsisNativo.eventos(String(d), String(h))), crearEvento: (t, i, f) => j(MorsisNativo.crearEvento(t, String(i), String(f)))
+      };
+    })() : null,
     buscarWeb: (consulta) => {
       if (!config.codigo || !config.sistema) { const e = new Error('Para buscar en internet, Morsis tiene que estar vinculada al sistema.'); e.paraDecir = true; return Promise.reject(e); }
       return buscadorSistema(consulta);
@@ -352,7 +361,7 @@
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
     alAvisar: paso => {
       const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
-        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…', 'herramienta:buscar_en_internet': '🔎 Buscando en internet…', 'herramienta:pesca': '🎣 Mirando cómo está para pescar…' };
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…', 'herramienta:buscar_en_internet': '🔎 Buscando en internet…', 'herramienta:pesca': '🎣 Mirando cómo está para pescar…', 'herramienta:poner_musica': '🎵 Poniendo música…', 'herramienta:llamar': '📞 Buscando el contacto…', 'herramienta:mandar_whatsapp': '💬 Preparando el WhatsApp…', 'herramienta:ver_calendario': '📅 Mirando el calendario…', 'herramienta:agendar': '📅 Anotando en el calendario…' };
       estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
     } });
 

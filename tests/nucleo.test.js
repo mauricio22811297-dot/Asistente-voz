@@ -419,3 +419,31 @@ test('búsqueda en internet por el sistema: resume con Gemini y, si falla, usa l
   const tope = N.crearBuscadorSistema({ url: () => 'https://sis', codigo: () => 'c', getClave: () => 'k', fetchFn: async () => ({ ok: false, json: async () => ({ error: 'Ya se usaron las 900 búsquedas' }) }) });
   await assert.rejects(tope('x'), /900/);
 });
+
+test('celular: música, llamar con confirmación y WhatsApp', async () => {
+  const N = require('../nucleo.js');
+  const hechas = [];
+  const celular = {
+    musica: q => (hechas.push('musica:' + q), { ok: true, app: 'Spotify' }), media: a => (hechas.push('media:' + a), { ok: true }),
+    contactos: n => /manzorro/i.test(n) ? [{ nombre: 'Distribuidora Manzorro', numero: '+54 9 11 5555-1234' }] : [],
+    llamar: n => (hechas.push('llamar:' + n), { ok: true }), whatsapp: (n, t) => (hechas.push('wa:' + n + ':' + t), { ok: true }),
+    eventos: () => [{ titulo: 'Dentista', inicio: Date.parse('2026-11-28T10:00:00-03:00'), todo_el_dia: false }], crearEvento: () => ({ ok: true })
+  };
+  const h = N.crearHerramientas({ celular, ahora: () => new Date('2026-11-27T21:00:00-03:00'), pedirJSON: async () => null, listas: N.crearListas({}), temporizadores: { poner() {}, cancelarTodos() { return 0; } }, config: {} });
+  const r = q => N.respuestaRapida(q, h);
+  assert.equal((await r('poné música de los redondos')).texto, 'Pongo los redondos en Spotify.');
+  assert.equal((await r('pausá la música')).texto, 'Listo.');
+  assert.equal((await r('llamá a Manzorro')).texto, '¿Llamo a Distribuidora Manzorro, al 11 5555 1234?');
+  assert.ok(!hechas.some(x => x.startsWith('llamar')), 'no llama sin confirmar');
+  assert.equal((await r('sí')).texto, 'Llamando a Distribuidora Manzorro.');
+  assert.ok(hechas.includes('llamar:+54 9 11 5555-1234'));
+  assert.equal((await r('llamá a Pepito')).texto, 'No encontré a «pepito» en los contactos del celular.');
+  const wa = await h.find(x => x.nombre === 'mandar_whatsapp').ejecutar({ a: 'Manzorro', mensaje: 'Mañana paso a buscar el pedido' });
+  assert.match(wa.pregunta, /WhatsApp/);
+  assert.equal((await r('no')).texto, 'Listo, no hago nada.');
+  assert.ok(!hechas.some(x => x.startsWith('wa:')));
+  const cal = await h.find(x => x.nombre === 'ver_calendario').ejecutar({ dias_desde_hoy: 1 });
+  assert.deepEqual(cal.eventos, [{ titulo: 'Dentista', hora: '10:00' }]);
+  // Sin celular (navegador común) no aparecen
+  assert.ok(!N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas({}), temporizadores: { poner() {}, cancelarTodos() { return 0; } } }).some(x => x.nombre === 'llamar'));
+});
