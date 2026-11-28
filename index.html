@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v46</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v47</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -140,9 +140,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=46"></script>
-<script src="nucleo.js?v=46"></script>
-<script src="detector.js?v=46"></script>
+<script src="nativo.js?v=47"></script>
+<script src="nucleo.js?v=47"></script>
+<script src="detector.js?v=47"></script>
 <script>
 (function(){
   'use strict';
@@ -322,11 +322,17 @@
     if (!r.ok) throw new Error('rios ' + r.status);
     return r.json();
   }
+  const buscadorSistema = N.crearBuscadorSistema({ url: () => config.sistema, codigo: () => config.codigo, getClave: () => config.clave,
+    fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })) });
   const herramientas = N.crearHerramientas({
     ahora: () => new Date(),
     pedirJSON: async url => { const r = await fetch(url, { signal: AbortSignal.timeout(10000) }); if (!r.ok) throw new Error('http ' + r.status); return r.json(); },
     tomtom: () => config.tomtom,
     smn: pedirSMN,
+    buscarWeb: (consulta) => {
+      if (!config.codigo || !config.sistema) { const e = new Error('Para buscar en internet, Morsis tiene que estar vinculada al sistema.'); e.paraDecir = true; return Promise.reject(e); }
+      return buscadorSistema(consulta);
+    },
     rios: pedirRios,
     posicion: () => new Promise(ok => { if (!navigator.geolocation) return ok(null); navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lon: p.coords.longitude }), () => ok(null), { timeout: 5000, maximumAge: 300000 }); }),
     listas, config: { get lat(){ return config.lat; }, get lon(){ return config.lon; }, get lugar(){ return config.lugar; }, get cuotas(){ return leerCuotas(config.cuotas); } },
@@ -346,7 +352,7 @@
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
     alAvisar: paso => {
       const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
-        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…', 'herramienta:pesca': '🎣 Mirando cómo está para pescar…' };
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…', 'herramienta:buscar_en_internet': '🔎 Buscando en internet…', 'herramienta:pesca': '🎣 Mirando cómo está para pescar…' };
       estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
     } });
 

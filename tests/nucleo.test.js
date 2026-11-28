@@ -241,15 +241,15 @@ test('códigos dictados: se arman (S030, M1234, PL25) sin romper medidas ni fras
   assert.equal(n('precio del codo de 3/4'), 'precio del codo de 3/4');
 });
 
-test('el tránsito y lo de "ahora" se buscan en internet (Google), y lo del negocio sigue yendo a la ferretería', async () => {
+test('lo de "ahora" (noticias, fútbol) se busca en internet, y lo del negocio sigue yendo a la ferretería', async () => {
   const cuerpos = [];
-  const fetchFn = async (u, o) => { cuerpos.push(JSON.parse(o.body)); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'Hay un choque en la Panamericana a la altura de Pacheco.' }] } }] }) }; };
+  const fetchFn = async (u, o) => { cuerpos.push(JSON.parse(o.body)); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'River le ganó a Boca en el Monumental, dicen desde Pacheco.' }] } }] }) }; };
   const consultas = [];
   const conector = { nombre: 'consultar_ferreteria', declaracion: { name: 'consultar_ferreteria' }, ejecutar: async a => { consultas.push(a.pregunta); return { respuesta: 'Sale 5000 pesos.' }; } };
   const h = N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas(almacenEnMemoria()),
     temporizadores: { poner() {}, cancelarTodos: () => 0 }, conectores: [conector], buscarWeb: N.crearBuscadorWeb({ fetchFn, getClave: () => 'K' }) });
   const c = N.crearCerebro({ fetchFn, getClave: () => 'K', herramientas: h });
-  const r = await c.responder('¿Cómo está la Panamericana?');
+  const r = await c.responder('¿Cómo salió River?');
   assert.match(r.texto, /Pacheco/);
   assert.ok(cuerpos[0].tools[0].google_search);
   await c.responder('cuánto sale el disco de corte');
@@ -401,4 +401,21 @@ test('pesca: luna y horarios de pique', () => {
   const hs = N.horariosSolunares(llena);
   assert.strictEqual(hs.mayores.length, 2);
   assert.match(hs.mayores.join(' '), /^\d\d:\d\d a \d\d:\d\d \d\d:\d\d a \d\d:\d\d$/);
+});
+
+test('búsqueda en internet por el sistema: resume con Gemini y, si falla, usa lo que trajo', async () => {
+  const N = require('../nucleo.js');
+  const pedidos = [];
+  const fetchFn = async (url, o) => {
+    pedidos.push(url);
+    if (url.endsWith('/api/morsis/buscar')) return { ok: true, json: async () => ({ respuesta: 'River won 2-1', resultados: [{ titulo: 'River 2 - Boca 1', contenido: 'Ganó River' }] }) };
+    return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'River le ganó 2 a 1 a Boca.' }] } }] }) };
+  };
+  const buscar = N.crearBuscadorSistema({ url: () => 'https://sis', codigo: () => 'c', fetchFn, getClave: () => 'k' });
+  assert.equal(await buscar('cómo salió River'), 'River le ganó 2 a 1 a Boca.');
+  const sinGemini = N.crearBuscadorSistema({ url: () => 'https://sis', codigo: () => 'c', getClave: () => 'k',
+    fetchFn: async (u, o) => u.endsWith('/api/morsis/buscar') ? fetchFn(u, o) : { ok: false, status: 500, json: async () => ({}) } });
+  assert.equal(await sinGemini('cómo salió River'), 'River won 2-1');
+  const tope = N.crearBuscadorSistema({ url: () => 'https://sis', codigo: () => 'c', getClave: () => 'k', fetchFn: async () => ({ ok: false, json: async () => ({ error: 'Ya se usaron las 900 búsquedas' }) }) });
+  await assert.rejects(tope('x'), /900/);
 });
