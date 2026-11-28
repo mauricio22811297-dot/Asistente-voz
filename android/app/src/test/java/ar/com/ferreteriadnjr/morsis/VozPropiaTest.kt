@@ -78,4 +78,12 @@ class VozPropiaTest {
         val b = VozPropia.recortar(a)
         assertTrue(b.size < a.size && VozPropia.duracion(b) > 0.5)
     }
+
+    @Test fun unaMuestraMuyDistintaNoDejaElUmbralEnInfinito() {
+        val buenas = List(4) { huella(palabra(morsis, 0.95 + it * 0.03)) }
+        val rara = Array(400) { DoubleArray(13) { 1.0 } }     // una "muestra" 4 veces más larga que las demás
+        val u = VozPropia.umbral(buenas + listOf(rara), "media")
+        assertTrue("umbral finito: $u", u.isFinite() && u > 0 && u < 1e6)
+        assertTrue("con todas raras no hay umbral", VozPropia.umbral(listOf(rara, Array(10) { DoubleArray(13) }), "media") == 0.0)
+    }
 }

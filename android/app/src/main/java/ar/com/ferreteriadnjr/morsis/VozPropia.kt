@@ -167,10 +167,16 @@ object VozPropia {
     /** Umbral a partir de las muestras: qué tan distintas son entre sí (promedio) × sensibilidad. */
     fun umbral(muestras: List<Array<DoubleArray>>, sensibilidad: String): Double {
         if (muestras.size < 2) return 0.0
-        var suma = 0.0; var n = 0
-        for (i in muestras.indices) for (j in i + 1 until muestras.size) { suma += dtw(muestras[i], muestras[j], false); n++ }
+        // Solo los pares que se pudieron comparar: si una muestra es mucho más larga o más corta que otra, dtw da
+        // "infinito", y sumarlo dejaba el umbral en infinito (¡y cualquier ruido despertaba a Morsis!).
+        val d = mutableListOf<Double>()
+        for (i in muestras.indices) for (j in i + 1 until muestras.size) {
+            val x = dtw(muestras[i], muestras[j], false)
+            if (x.isFinite() && x < 1e6) d.add(x)
+        }
+        if (d.isEmpty()) return 0.0
         val factor = when (sensibilidad) { "alta" -> 2.6; "baja" -> 1.8; else -> 2.2 }
-        return suma / n * factor
+        return d.average() * factor
     }
 
     /**

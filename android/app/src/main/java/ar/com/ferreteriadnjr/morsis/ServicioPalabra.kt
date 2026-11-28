@@ -220,7 +220,8 @@ class ServicioPalabra : Service(), RecognitionListener {
         val distancias = muestras.map { VozPropia.dtw(it, huella, prefijo = true) }.sorted()
         val mejor = distancias.first()
         val segunda = if (distancias.size > 1) distancias[1] else mejor
-        val pct = { d: Double -> if (d == Double.MAX_VALUE) 0 else Math.round(umbralVoz / d * 100).toInt() }
+        val pct = { d: Double -> if (d <= 0.0 || d >= 1e6 || !umbralVoz.isFinite()) 0 else Math.round(umbralVoz / d * 100).toInt().coerceIn(0, 999) }
+        if (!umbralVoz.isFinite() || umbralVoz <= 0.0) { oido("⚠️ las muestras grabadas no sirven: borralas y grabalas de nuevo", false); return }
         oido("🔊 parecido " + pct(mejor) + "% / 2ª " + pct(segunda) + "%", false)
         if (VozPropia.esLaPalabra(distancias, umbralVoz) && esElDueno(limpio)) main.post { despertar() }
     }
