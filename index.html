@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v45</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v46</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -112,6 +112,9 @@
       <p class="ayuda" id="a-muestras" style="font-weight:700;"></p>
       <button type="button" id="a-grabar" class="secundario" style="margin:4px 0;">🔴 Grabar la palabra</button>
       <button type="button" id="a-borrarmuestras" class="secundario" style="margin:4px 0;">Borrar mis grabaciones</button>
+      <div class="opcion" style="margin-top:8px;"><input type="checkbox" id="a-solomivoz"><label for="a-solomivoz"><b>👤 Solo mi voz:</b> si otra persona dice «Morsis», no se activa</label></div>
+      <p class="ayuda">Al activarlo baja un archivo de 13 MB (una sola vez) y hay que grabar la palabra 5 veces de nuevo. Si alguna vez no te reconoce, en «Copiar diagnóstico» se ve el % de parecido.</p>
+      <p class="ayuda" id="a-dueno" style="font-weight:700;"></p>
     </div>
     <button type="button" id="a-ensenar" class="secundario" style="margin:6px 0;">🎓 Enseñarle cómo digo «Morsis»</button>
     <p class="ayuda" id="a-aprendidas"></p>
@@ -137,9 +140,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=45"></script>
-<script src="nucleo.js?v=45"></script>
-<script src="detector.js?v=45"></script>
+<script src="nativo.js?v=46"></script>
+<script src="nucleo.js?v=46"></script>
+<script src="detector.js?v=46"></script>
 <script>
 (function(){
   'use strict';
@@ -164,7 +167,7 @@
   const guardarConfig = () => {
     almacen.set(CLAVE_CONFIG, JSON.stringify(config));
     // La app escucha «Morsis» por su cuenta (con la pantalla apagada): se le pasa la palabra y lo aprendido.
-    if (NATIVO){ try{ MorsisNativo.configurar(JSON.stringify({ palabra: config.palabra || 'Morsis', aprendidas: config.aprendidas || [], sensibilidad: config.sensibilidad || 'media' })); }catch(_){} }
+    if (NATIVO){ try{ MorsisNativo.configurar(JSON.stringify({ palabra: config.palabra || 'Morsis', aprendidas: config.aprendidas || [], sensibilidad: config.sensibilidad || 'media', soloMiVoz: !!config.soloMiVoz })); }catch(_){} }
   };
 
   // ------------------------------------------------ conversación en pantalla
@@ -690,6 +693,8 @@
         $('a-grabar').textContent = ev.grabando ? '🎤 Decila ahora…' : '🔴 Grabar la palabra';
         pintarMuestras(ev.total, ev.texto);
         if (!dlg.open) $('oido').textContent = ev.texto;
+      } else if (ev.tipo === 'dueno'){
+        $('a-dueno').textContent = ev.texto; anotar('solo mi voz: ' + ev.texto);
       } else if (ev.tipo === 'estado'){
         if (!diagnostico.length || diagnostico[diagnostico.length - 1][1] !== 'estado: ' + ev.texto) anotar('estado: ' + ev.texto);
         if (!ocupado && !rec && !ensenando) $('oido').textContent = '🎙️ ' + ev.texto;
@@ -704,7 +709,7 @@
   const dlg = $('dlg-ajustes');
   function abrirAjustes(){
     $('a-clave').value = config.clave; $('a-nombre').value = config.nombre; $('a-lugar').value = config.lugar;
-    $('a-palabra').value = config.palabra; $('a-sensibilidad').value = config.sensibilidad || 'media'; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-cuotas').value = config.cuotas || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); pintarMuestras(); $('a-voz').checked = !!config.voz; $('a-seguir').checked = !!config.seguirEscuchando; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
+    $('a-palabra').value = config.palabra; $('a-sensibilidad').value = config.sensibilidad || 'media'; $('a-sistema').value = config.sistema; $('a-codigo').value = config.codigo; $('a-compu').value = config.compu || ''; $('a-tomtom').value = config.tomtom || ''; $('a-cuotas').value = config.cuotas || ''; $('a-avisos').checked = config.avisos !== false; $('a-sinpitidos').checked = !!config.sinPitidos; $('a-errordetector').textContent = config.errorDetector ? '⚠️ Último error del detector: ' + config.errorDetector : ''; pintarAprendidas(); pintarMuestras(); $('a-voz').checked = !!config.voz; $('a-seguir').checked = !!config.seguirEscuchando; $('a-solomivoz').checked = !!config.soloMiVoz; $('a-pantalla').checked = !!config.pantalla; $('a-msg').textContent = '';
     if (!dlg.open) dlg.showModal();
   }
   $('btn-ajustes').addEventListener('click', abrirAjustes);
@@ -723,7 +728,7 @@
     $('a-borrarmuestras').addEventListener('click', () => { if (confirm('¿Borrar tus grabaciones de la palabra?')){ MorsisNativo.borrarMuestras(); setTimeout(() => pintarMuestras(), 400); } });
   }
   // Pasar los ajustes de un aparato a otro (por ejemplo, de Chrome a la app de Android) copiando y pegando.
-  const AJUSTES_QUE_PASAN = ['clave', 'nombre', 'lugar', 'lat', 'lon', 'sistema', 'codigo', 'compu', 'tomtom', 'cuotas', 'palabra', 'aprendidas', 'avisos', 'voz', 'pantalla', 'manosLibres', 'sensibilidad', 'seguirEscuchando'];
+  const AJUSTES_QUE_PASAN = ['clave', 'nombre', 'lugar', 'lat', 'lon', 'sistema', 'codigo', 'compu', 'tomtom', 'cuotas', 'palabra', 'aprendidas', 'avisos', 'voz', 'pantalla', 'manosLibres', 'sensibilidad', 'seguirEscuchando', 'soloMiVoz'];
   $('a-diagnostico').addEventListener('click', async () => {
     const t0 = diagnostico.length ? diagnostico[0][0] : Date.now();
     const hora = new Date(t0).toLocaleTimeString('es-AR');
@@ -767,7 +772,7 @@
       }catch(_){ msg.textContent = 'No pude buscar la ciudad (¿sin internet?).'; return; }
     }
     config.clave = $('a-clave').value.trim(); config.nombre = $('a-nombre').value.trim();
-    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sensibilidad = $('a-sensibilidad').value; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.tomtom = $('a-tomtom').value.trim(); config.cuotas = $('a-cuotas').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.seguirEscuchando = $('a-seguir').checked; config.pantalla = $('a-pantalla').checked;
+    config.palabra = $('a-palabra').value.trim() || 'Morsis'; config.sensibilidad = $('a-sensibilidad').value; config.sistema = $('a-sistema').value.trim().replace(/\/+$/, ''); config.codigo = $('a-codigo').value.trim(); config.compu = $('a-compu').value.trim(); config.tomtom = $('a-tomtom').value.trim(); config.cuotas = $('a-cuotas').value.trim(); config.avisos = $('a-avisos').checked; const antesSinPitidos = config.sinPitidos; config.sinPitidos = $('a-sinpitidos').checked; if (antesSinPitidos !== config.sinPitidos){ detenerFondo(); if (detector && !config.sinPitidos){ detector.detener(); detector = null; detectorListo = false; } } config.voz = $('a-voz').checked; config.seguirEscuchando = $('a-seguir').checked; config.soloMiVoz = $('a-solomivoz').checked; config.pantalla = $('a-pantalla').checked;
     guardarConfig(); aplicarPantalla(); pintarModo(); dlg.close(); iniciarFondo();
     mensaje('ia', config.clave ? 'Listo, guardé tus ajustes.' : 'Guardé tus ajustes, pero todavía falta la clave de Google.');
   });

@@ -18,6 +18,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
+import org.vosk.SpeakerModel
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
 import java.io.BufferedInputStream
@@ -46,6 +47,7 @@ class ServicioPalabra : Service(), RecognitionListener {
             "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip",
             "https://huggingface.co/localstack/vosk-models/resolve/main/vosk-model-small-es-0.42.zip"
         )
+        private const val MODELO_VOCES = "https://alphacephei.com/vosk/models/vosk-model-spk-0.4.zip"
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -65,6 +67,13 @@ class ServicioPalabra : Service(), RecognitionListener {
     private var umbralVoz = 0.0
     private var grabandoHasta = 0L
     private var detectorVoz: DetectorVozPropia? = null
+    // «Solo mi voz» (ver VozDueno): huella de la persona con el modelo de voces de Vosk
+    private var modeloVoces: SpeakerModel? = null
+    private var recDueno: Recognizer? = null
+    private val lockDueno = Any()
+    @Volatile private var huellasDueno: List<DoubleArray> = emptyList()
+    @Volatile private var umbralDueno = 0.0
+    @Volatile private var preparandoVoces = false
     private fun usarVozPropia() = muestras.size >= 3
     private fun grabando() = System.currentTimeMillis() < grabandoHasta
 
@@ -94,6 +103,7 @@ class ServicioPalabra : Service(), RecognitionListener {
     override fun onDestroy() {
         instancia = null
         detenerEscucha()
+        try { synchronized(lockDueno) { recDueno?.close(); recDueno = null } } catch (_: Exception) { }
         try { modelo?.close() } catch (_: Exception) { }
         super.onDestroy()
     }
@@ -106,6 +116,61 @@ class ServicioPalabra : Service(), RecognitionListener {
     private fun recargarMuestras() {
         muestras = VozPropia.leer(filesDir)
         umbralVoz = VozPropia.umbral(muestras, palabra.sensibilidad)
+        if (palabra.soloMiVoz) thread { prepararDueno() } else huellasDueno = emptyList()
+    }
+
+    // ------------------------------------------------------------------ «Solo mi voz»
+    private fun avisarDueno(texto: String) {
+        MainActivity.actual?.puente?.emitir(JSONObject().put("tipo", "dueno").put("texto", texto))
+    }
+
+    /** Baja (una vez) el modelo de voces y arma las huellas del dueño con el audio de las muestras. */
+    private fun prepararDueno() {
+        if (preparandoVoces) return
+        preparandoVoces = true
+        try {
+            if (modeloVoces == null) {
+                val dir = File(filesDir, "modelo-voces")
+                if (!File(dir, "listo").exists()) {
+                    dir.deleteRecursively(); dir.mkdirs()
+                    bajar(MODELO_VOCES, dir, "Bajando el reconocedor de tu voz", { File(it, "final.ext.raw").exists() || File(it, "mfcc.conf").exists() }) { avisarDueno(it) }
+                    File(dir, "listo").writeText("1")
+                }
+                modeloVoces = SpeakerModel(dir.absolutePath)
+            }
+            var espera = 0
+            while (modelo == null && espera < 120) { Thread.sleep(1000); espera++ }
+            val m = modelo ?: throw Exception("falta el detector")
+            synchronized(lockDueno) { if (recDueno == null) recDueno = Recognizer(m, VozPropia.TASA.toFloat(), modeloVoces) }
+            val huellas = VozPropia.leerAudios(filesDir).mapNotNull { huellaPersona(it) }
+            huellasDueno = huellas
+            umbralDueno = VozDueno.umbral(huellas, palabra.sensibilidad)
+            val faltan = 3 - huellas.size
+            avisarDueno(if (faltan <= 0) "✅ Solo tu voz: activo (" + huellas.size + " muestras)."
+                else "Para «Solo mi voz» grabá $faltan muestra" + (if (faltan == 1) "" else "s") + " más con «Grabar muestra» (las de antes no sirven para esto).")
+            main.post { aplicar() }
+        } catch (e: Exception) {
+            avisarDueno("No pude preparar «Solo mi voz» (" + (e.message ?: "error") + "). Reintento en un minuto.")
+            main.postDelayed({ thread { prepararDueno() } }, 60_000)
+        } finally { preparandoVoces = false }
+    }
+
+    /** Huella de la persona de un pedazo de audio (null si Vosk no la pudo sacar). */
+    private fun huellaPersona(audio: ShortArray): DoubleArray? = synchronized(lockDueno) {
+        val r = recDueno ?: return null
+        try { r.acceptWaveForm(audio, audio.size); VozDueno.deJson(r.finalResult) } catch (_: Exception) { null }
+    }
+
+    /** true = puede despertar (es el dueño, o «Solo mi voz» está apagado o todavía no está listo). */
+    private fun esElDueno(audio: ShortArray): Boolean {
+        if (!palabra.soloMiVoz) return true
+        val propias = huellasDueno
+        if (propias.size < 3) { oido("👤 «Solo mi voz» todavía no está listo: despierto igual", false); return true }
+        val h = huellaPersona(audio) ?: run { oido("👤 no pude sacar la huella de la voz: despierto igual", false); return true }
+        val p = VozDueno.parecido(h, propias)
+        val ok = p >= umbralDueno
+        oido((if (ok) "👤 tu voz " else "🚫 no es tu voz ") + Math.round(p * 100) + "% (mínimo " + Math.round(umbralDueno * 100) + "%)", false)
+        return ok
     }
 
     /** La próxima vez que hables (en 15 s) se guarda como muestra de tu palabra. */
@@ -134,7 +199,7 @@ class ServicioPalabra : Service(), RecognitionListener {
                 avisarMuestra(false, if (seg < 0.3) "Muy corto: decí la palabra completa." else "Muy largo: decí solo «" + palabraVisible() + "», sin nada más.", grabando = true)
                 return
             }
-            VozPropia.guardar(filesDir, VozPropia.mfcc(limpio))
+            VozPropia.guardar(filesDir, VozPropia.mfcc(limpio), limpio)
             main.post {
                 grabandoHasta = 0L
                 recargarMuestras()
@@ -153,7 +218,7 @@ class ServicioPalabra : Service(), RecognitionListener {
         val segunda = if (distancias.size > 1) distancias[1] else mejor
         val pct = { d: Double -> if (d == Double.MAX_VALUE) 0 else Math.round(umbralVoz / d * 100).toInt() }
         oido("🔊 parecido " + pct(mejor) + "% / 2ª " + pct(segunda) + "%", false)
-        if (VozPropia.esLaPalabra(distancias, umbralVoz)) main.post { despertar() }
+        if (VozPropia.esLaPalabra(distancias, umbralVoz) && esElDueno(limpio)) main.post { despertar() }
     }
 
 
@@ -192,7 +257,7 @@ class ServicioPalabra : Service(), RecognitionListener {
         }
     }
 
-    private fun bajar(url: String, dir: File) {
+    private fun bajar(url: String, dir: File, que: String = "Bajando el detector", valido: (File) -> Boolean = { File(it, "am").exists() || File(it, "conf").exists() }, aviso: (String) -> Unit = { avisar(it) }) {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 20_000; c.readTimeout = 60_000; c.instanceFollowRedirects = true
         val total = c.contentLengthLong
@@ -206,7 +271,7 @@ class ServicioPalabra : Service(), RecognitionListener {
                     val pct = if (total > 0) (leido * 100 / total).toInt() else -1
                     if (pct != ultimoAviso && (pct % 5 == 0 || pct < 0)) {
                         ultimoAviso = pct
-                        avisar(if (pct >= 0) "Bajando el detector: $pct% (una sola vez)" else "Bajando el detector… " + (leido / 1_000_000) + " MB")
+                        aviso(if (pct >= 0) "$que: $pct% (una sola vez)" else "$que… " + (leido / 1_000_000) + " MB")
                     }
                 }
                 return n
@@ -225,7 +290,7 @@ class ServicioPalabra : Service(), RecognitionListener {
                 e = z.nextEntry
             }
         }
-        if (!File(dir, "am").exists() && !File(dir, "conf").exists()) throw Exception("el archivo bajado no es el modelo")
+        if (!valido(dir)) throw Exception("el archivo bajado no es el modelo")
     }
 
     // ------------------------------------------------------------------ escucha
@@ -237,7 +302,7 @@ class ServicioPalabra : Service(), RecognitionListener {
         if (debe) iniciarEscucha() else detenerEscucha()
         when {
             grabando() -> {}
-            debe && usarVozPropia() -> avisar("Escuchando «" + palabraVisible() + "» con tu voz (" + muestras.size + " muestras)")
+            debe && usarVozPropia() -> avisar("Escuchando «" + palabraVisible() + "» con tu voz (" + muestras.size + " muestras)" + (if (palabra.soloMiVoz && huellasDueno.size >= 3) " · solo tu voz" else ""))
             modelo == null -> {}
             !permiso() -> avisar("Falta el permiso del micrófono: abrí Morsis.")
             pausadoPorUsuario -> avisar("En pausa. Tocá «Seguir» para que vuelva a escuchar.")

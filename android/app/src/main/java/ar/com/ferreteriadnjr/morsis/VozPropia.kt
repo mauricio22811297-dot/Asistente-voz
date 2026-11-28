@@ -201,15 +201,28 @@ object VozPropia {
     // ------------------------------------------------------------------ muestras en el celu
     fun carpeta(dir: File) = File(dir, "muestras").apply { mkdirs() }
 
-    fun guardar(dir: File, huella: Array<DoubleArray>) {
-        val f = File(carpeta(dir), "m_" + System.currentTimeMillis() + ".mfcc")
+    fun guardar(dir: File, huella: Array<DoubleArray>, audio: ShortArray? = null) {
+        val base = "m_" + System.currentTimeMillis()
+        val f = File(carpeta(dir), "$base.mfcc")
+        // El audio también se guarda: con él se arma la "huella de la persona" para «Solo mi voz» (ver VozDueno)
+        if (audio != null) DataOutputStream(File(carpeta(dir), "$base.pcm").outputStream().buffered()).use { o -> audio.forEach { o.writeShort(it.toInt()) } }
         DataOutputStream(f.outputStream().buffered()).use { o ->
             o.writeInt(huella.size); o.writeInt(if (huella.isEmpty()) 0 else huella[0].size)
             huella.forEach { fila -> fila.forEach { o.writeFloat(it.toFloat()) } }
         }
-        // Se guardan las 8 más nuevas.
-        carpeta(dir).listFiles()?.sortedByDescending { it.name }?.drop(8)?.forEach { it.delete() }
+        // Se guardan las 8 más nuevas (cada una con su audio, si lo tiene).
+        val viejas = (carpeta(dir).listFiles() ?: emptyArray()).map { it.nameWithoutExtension }.distinct().sortedDescending().drop(8).toSet()
+        carpeta(dir).listFiles()?.filter { it.nameWithoutExtension in viejas }?.forEach { it.delete() }
     }
+
+    /** Audios de las muestras (las grabadas antes de «Solo mi voz» no tienen). */
+    fun leerAudios(dir: File): List<ShortArray> = (carpeta(dir).listFiles() ?: emptyArray())
+        .filter { it.name.endsWith(".pcm") }.sortedBy { it.name }.mapNotNull { f ->
+            try {
+                val n = (f.length() / 2).toInt()
+                DataInputStream(f.inputStream().buffered()).use { i -> ShortArray(n) { i.readShort() } }
+            } catch (_: Exception) { null }
+        }
 
     fun leer(dir: File): List<Array<DoubleArray>> = (carpeta(dir).listFiles() ?: emptyArray())
         .filter { it.name.endsWith(".mfcc") }.sortedBy { it.name }.mapNotNull { f ->
