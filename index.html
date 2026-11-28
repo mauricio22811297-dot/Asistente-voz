@@ -52,7 +52,7 @@
 </head>
 <body>
 <header>
-  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v49</small></h1>
+  <h1>🎙️ Asistente <small style="font-size:11px; color:var(--suave); font-weight:400;">v50</small></h1>
   <button class="icono" id="btn-ajustes" aria-label="Ajustes">⚙️ Ajustes</button>
 </header>
 
@@ -65,7 +65,7 @@
   <div id="estado" role="status">Tocá el micrófono para hablar</div>
   <button id="btn-modo" class="modo">👂 Manos libres</button>
   <div id="oido" class="ejemplos" style="min-height:18px;"></div>
-  <div class="ejemplos">Decí «Morsis» y después: «cuánto sale el codo de fusión de tres cuartos», «qué hora es», «cómo está el clima», «cómo están los ríos», «cómo está para pescar mañana en San Pedro», «poné un temporizador de 10 minutos», «sumá 3 codos de tres cuartos al ticket», «contame un chiste».</div>
+  <div class="ejemplos">Decí «Morsis» y después: «cuánto sale el codo de fusión de tres cuartos», «qué hora es», «cómo está el clima», «cómo están los ríos», «cómo está para pescar mañana en San Pedro», «poné Radio Mitre», «poné un temporizador de 10 minutos», «sumá 3 codos de tres cuartos al ticket», «contame un chiste».</div>
 
   <div class="panel" id="panel-temporizadores" hidden></div>
   <div class="panel" id="panel-listas" hidden></div>
@@ -140,9 +140,9 @@
   </form>
 </dialog>
 
-<script src="nativo.js?v=49"></script>
-<script src="nucleo.js?v=49"></script>
-<script src="detector.js?v=49"></script>
+<script src="nativo.js?v=50"></script>
+<script src="nucleo.js?v=50"></script>
+<script src="detector.js?v=50"></script>
 <script>
 (function(){
   'use strict';
@@ -322,6 +322,20 @@
     if (!r.ok) throw new Error('rios ' + r.status);
     return r.json();
   }
+  // Radios por internet: catálogo comunitario radio-browser.info (gratis, sin clave). Primero las de Argentina.
+  async function buscarRadio(nombre){
+    const servidores = ['de1', 'de2', 'nl1', 'at1'];
+    const limpio = String(nombre).replace(/\b(radio|la|fm|am)\b/gi, ' ').replace(/\s+/g, ' ').trim() || nombre;
+    const elegir = lista => (Array.isArray(lista) ? lista : []).find(x => x.url_resolved && x.lastcheckok !== 0 && /mp3|aac|ogg/i.test(x.codec || 'mp3'));
+    for (const s of servidores){
+      try{
+        const pedir = async (q, ar) => fetch(`https://${s}.api.radio-browser.info/json/stations/search?name=${encodeURIComponent(q)}${ar ? '&countrycode=AR' : ''}&hidebroken=true&order=clickcount&reverse=true&limit=15`, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
+        const e = elegir(await pedir(nombre, true)) || elegir(await pedir(limpio, true)) || elegir(await pedir(nombre, false));
+        return e ? { nombre: String(e.name || nombre).trim(), url: e.url_resolved } : null;
+      }catch(_){ /* probar otro servidor */ }
+    }
+    throw new Error('sin servidor');
+  }
   const buscadorSistema = N.crearBuscadorSistema({ url: () => config.sistema, codigo: () => config.codigo, getClave: () => config.clave,
     fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })) });
   const herramientas = N.crearHerramientas({
@@ -335,7 +349,11 @@
       return {
         musica: q => j(MorsisNativo.musica(q)), media: a => j(MorsisNativo.media(a)), contactos: n => j(MorsisNativo.contactos(n)),
         llamar: n => j(MorsisNativo.llamar(n)), whatsapp: (n, t) => j(MorsisNativo.whatsapp(n, t)),
-        eventos: (d, h) => j(MorsisNativo.eventos(String(d), String(h))), crearEvento: (t, i, f) => j(MorsisNativo.crearEvento(t, String(i), String(f)))
+        eventos: (d, h) => j(MorsisNativo.eventos(String(d), String(h))), crearEvento: (t, i, f) => j(MorsisNativo.crearEvento(t, String(i), String(f))),
+        ...(typeof MorsisNativo.radio === 'function' ? {
+          radio: (url, nombre) => MorsisNativo.radio(url, nombre), pararRadio: () => MorsisNativo.pararRadio(), radioSonando: () => MorsisNativo.radioSonando(),
+          buscarRadio
+        } : {})
       };
     })() : null,
     buscarWeb: (consulta) => {
@@ -361,7 +379,7 @@
   const cerebro = N.crearCerebro({ fetchFn: (u, o) => fetch(u, Object.assign({}, o, { signal: AbortSignal.timeout(25000) })), getClave: () => config.clave, getNombre: () => config.nombre, herramientas,
     alAvisar: paso => {
       const textos = { pensando: '🤖 Pensando…', redactando: '🤖 Armando la respuesta…', 'herramienta:clima': '🌤️ Consultando el clima…',
-        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…', 'herramienta:buscar_en_internet': '🔎 Buscando en internet…', 'herramienta:pesca': '🎣 Mirando cómo está para pescar…', 'herramienta:poner_musica': '🎵 Poniendo música…', 'herramienta:llamar': '📞 Buscando el contacto…', 'herramienta:mandar_whatsapp': '💬 Preparando el WhatsApp…', 'herramienta:ver_calendario': '📅 Mirando el calendario…', 'herramienta:agendar': '📅 Anotando en el calendario…' };
+        'herramienta:fecha_y_hora': '🕒 Mirando la hora…', 'herramienta:poner_temporizador': '⏱️ Poniendo el temporizador…', 'herramienta:transito': '🚗 Mirando el tránsito…', 'herramienta:tiempo_de_viaje': '🚗 Calculando el viaje…', 'herramienta:dolar': '💵 Mirando el dólar…', 'herramienta:calcular': '🧮 Haciendo la cuenta…', 'herramienta:precio_final': '🧮 Calculando el precio…', 'herramienta:poner_recordatorio': '⏰ Anotando el recordatorio…', 'herramienta:feriados': '📅 Mirando los feriados…', 'herramienta:rios': '🌊 Mirando los ríos…', 'herramienta:buscar_en_internet': '🔎 Buscando en internet…', 'herramienta:pesca': '🎣 Mirando cómo está para pescar…', 'herramienta:poner_musica': '🎵 Poniendo música…', 'herramienta:poner_radio': '📻 Buscando la radio…', 'herramienta:llamar': '📞 Buscando el contacto…', 'herramienta:mandar_whatsapp': '💬 Preparando el WhatsApp…', 'herramienta:ver_calendario': '📅 Mirando el calendario…', 'herramienta:agendar': '📅 Anotando en el calendario…' };
       estado.textContent = textos[paso] || (paso.startsWith('herramienta:') ? '⚙️ Consultando…' : '🤖 Pensando…');
     } });
 
@@ -708,6 +726,9 @@
         $('a-grabar').textContent = ev.grabando ? '🎤 Decila ahora…' : '🔴 Grabar la palabra';
         pintarMuestras(ev.total, ev.texto);
         if (!dlg.open) $('oido').textContent = ev.texto;
+      } else if (ev.tipo === 'radio'){
+        anotar('radio: ' + ev.nombre + ' · ' + ev.detalle);
+        if (!ev.ok){ pendientesDeDecir.push(`No pude poner ${ev.nombre}: la radio no responde. Probá con otra.`); decirAvisos(); }
       } else if (ev.tipo === 'musica'){
         anotar('música: ' + (ev.sonando ? 'sonando' : 'no arrancó sola') + ' en ' + ev.app);
         if (!ev.sonando && !ocupado && !rec){ pendientesDeDecir.push(`${ev.app || 'La app de música'} abrió la búsqueda pero no arrancó sola: tocá el primer resultado.`); decirAvisos(); }

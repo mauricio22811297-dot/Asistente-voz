@@ -447,3 +447,20 @@ test('celular: música, llamar con confirmación y WhatsApp', async () => {
   // Sin celular (navegador común) no aparecen
   assert.ok(!N.crearHerramientas({ ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas({}), temporizadores: { poner() {}, cancelarTodos() { return 0; } } }).some(x => x.nombre === 'llamar'));
 });
+
+test('radio: buscar, poner y apagar', async () => {
+  const N = require('../nucleo.js');
+  let sonando = '';
+  const celular = { radio: (u, n) => { sonando = n; }, pararRadio: () => { sonando = ''; }, radioSonando: () => sonando, media: () => ({ ok: true }),
+    buscarRadio: async q => /mitre/i.test(q) ? { nombre: 'Radio Mitre AM 790', url: 'https://x/mitre' } : null,
+    musica: () => ({ ok: true, app: 'Spotify' }), contactos: () => [], llamar: () => ({}), whatsapp: () => ({}), eventos: () => [], crearEvento: () => ({}) };
+  const h = N.crearHerramientas({ celular, ahora: () => new Date(), pedirJSON: async () => null, listas: N.crearListas({}), temporizadores: { poner() {}, cancelarTodos() { return 0; } }, config: {} });
+  const r = q => N.respuestaRapida(q, h);
+  assert.equal((await r('poné radio Mitre')).texto, 'Pongo Radio Mitre AM 790.');
+  assert.equal(sonando, 'Radio Mitre AM 790');
+  assert.equal((await r('pausá la música')).texto, 'Listo, apagué la radio.');
+  assert.equal(sonando, '');
+  assert.equal((await r('poné la radio Pirulo')).texto, 'No encontré la radio «pirulo».');
+  await r('poné radio mitre');
+  assert.equal((await r('apagá la radio')).texto, 'Listo, apagué la radio.');
+});

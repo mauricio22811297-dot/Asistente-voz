@@ -63,5 +63,10 @@ class Puente(private val act: MainActivity, private val web: WebView) {
     @JavascriptInterface fun llamar(numero: String): String = acciones.llamar(numero)
     @JavascriptInterface fun whatsapp(numero: String, texto: String): String = acciones.whatsapp(numero, texto)
     @JavascriptInterface fun eventos(desde: String, hasta: String): String = acciones.eventos(desde.toLong(), hasta.toLong())
+    @JavascriptInterface fun radio(url: String, nombre: String) {
+        Radio.poner(url, nombre) { r -> emitir(JSONObject().put("tipo", "radio").put("nombre", nombre).put("ok", r == "ok").put("detalle", r)) }
+    }
+    @JavascriptInterface fun pararRadio() { Radio.parar() }
+    @JavascriptInterface fun radioSonando(): String = if (Radio.sonando) Radio.nombre else ""
     @JavascriptInterface fun crearEvento(titulo: String, inicio: String, fin: String): String = acciones.crearEvento(titulo, inicio.toLong(), fin.toLong())
 }

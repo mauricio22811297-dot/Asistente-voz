@@ -230,6 +230,7 @@ class ServicioPalabra : Service(), RecognitionListener {
     fun enUso(si: Boolean) {
         main.post {
             usos = if (si) usos + 1 else maxOf(0, usos - 1)
+            Radio.bajar(usos > 0)
             if (!si) pausaHasta = 0L
             aplicar()
         }
@@ -423,6 +424,8 @@ class ServicioPalabra : Service(), RecognitionListener {
     }
 
     private fun despertar() {
+        Radio.bajar(true)
+        main.postDelayed({ if (usos == 0) Radio.bajar(false) }, 16_000)   // si al final no hubo pedido, la radio vuelve
         val ahora = System.currentTimeMillis()
         if (ahora - ultimoDespertar < 2500) return
         ultimoDespertar = ahora
